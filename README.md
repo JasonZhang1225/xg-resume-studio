@@ -1,4 +1,4 @@
-# 滴鱼简历助手 XG Resume Studio
+﻿# 滴鱼简历助手 XG Resume Studio
 
 > 📁 本地优先的个人简历管理系统：上传证书照片 / PDF / Word，自动识别**获奖情况**与**任职情况**；
 > 填好资料后用四套场景化 A4 模板一键产出简历（网页预览 / 打印存 PDF / Word 下载）。
@@ -95,11 +95,11 @@ uvicorn app:app --host 127.0.0.1 --port 8000
 
 ## 🤝 参与贡献
 
-见 [CONTRIBUTING.md](CONTRIBUTING.md)。提交前请确保 `pytest` 与 `ruff check` 通过。
+见 [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)。提交前请确保 `pytest` 与 `ruff check` 通过。
 
 ## 📮 支持与反馈
 
-运行环境、启动报错类问题，请先阅读根目录的 **《运行环境配置说明.txt》**（含常见问题自查清单）。
+运行环境、启动报错类问题，请先阅读 **docs/运行环境配置说明.txt**（含常见问题自查清单）。
 仍无法解决请联系开发者：**maplelloyd@163.com**（请注明问题现象 + 报错截图）。
 
 ## 📄 许可证

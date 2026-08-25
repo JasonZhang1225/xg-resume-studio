@@ -36,6 +36,6 @@ exit /b
 :nopython
 echo [错误] 未检测到 Python 3.10 或更高版本，环境配置失败。
 echo 请先双击「滴鱼简历助手.bat」按提示安装 Python 后重试。
-echo 详细说明见同目录《运行环境配置说明.txt》。
+echo 详细说明见docs 文件夹内docs 文件夹内《运行环境配置说明.txt》。
 pause
 exit /b 1

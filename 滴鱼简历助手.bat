@@ -45,7 +45,7 @@ echo 正在启动：http://127.0.0.1:!PORT!  浏览器将自动打开，使用期间请勿关闭本窗口
 start "" /b cmd /c "ping -n 8 127.0.0.1 >nul & start http://127.0.0.1:!PORT!"
 ".venv\Scripts\python.exe" -m uvicorn app:app --host 127.0.0.1 --port !PORT!
 echo.
-echo 服务已退出。如有报错，请把上方文字拍照发给开发者（邮箱见《运行环境配置说明.txt》）。
+echo 服务已退出。如有报错，请把上方文字拍照发给开发者（邮箱见docs 文件夹内《运行环境配置说明.txt》）。
 pause
 exit /b
 
@@ -66,7 +66,7 @@ exit /b
 echo [错误] 未检测到 Python 3.10 ~ 3.14。
 echo 请先到 https://www.python.org/downloads/ 安装 Python，
 echo 安装时务必勾选「Add Python to PATH」，然后重新双击本脚本。
-echo 详细说明见同目录《运行环境配置说明.txt》。
+echo 详细说明见docs 文件夹内docs 文件夹内《运行环境配置说明.txt》。
 pause
 exit /b 1
 
@@ -81,7 +81,7 @@ echo [错误] 依赖安装失败，多为网络问题。处理办法：
 echo   ① 关闭代理/加速器后重新双击本脚本，已完成步骤会自动跳过；
 echo   ② 或在本目录打开 cmd 手动执行：
 echo      .venv\Scripts\python.exe -m pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
-echo 更多帮助见《运行环境配置说明.txt》。
+echo 更多帮助见docs 文件夹内《运行环境配置说明.txt》。
 pause
 exit /b 1
 
