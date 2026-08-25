@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect width='24' height='24' rx='6' fill='%230f766e'/><path d='M13 4H8a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V8z' fill='none' stroke='white' stroke-width='1.6'/><path d='M13 4v4h4' fill='none' stroke='white' stroke-width='1.6' stroke-linejoin='round'/></svg>">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}滴鱼简历助手{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+{% from "_icons.html" import icon %}
+<nav class="topnav">
+  <a class="brand" href="/" style="text-decoration:none;">
+    <span class="logo">{{ icon("file-text") }}</span>
+    <span>滴鱼简历助手 <small style="color:#99a6b2;font-weight:500">XG Resume Studio</small></span>
+  </a>
+  <div class="links">
+    <a href="/" class="{{ 'active' if active == 'home' else '' }}">{{ icon("home") }}<span>首页</span></a>
+    <a href="/items" class="{{ 'active' if active == 'items' else '' }}">{{ icon("award") }}<span>获奖与任职</span></a>
+    <a href="/certs" class="{{ 'active' if active == 'certs' else '' }}">{{ icon("image") }}<span>证书归档</span></a>
+    <a href="/profile" class="{{ 'active' if active == 'profile' else '' }}">{{ icon("user") }}<span>个人资料</span></a>
+    <a href="/chat" class="{{ 'active' if active == 'chat' else '' }}">
+      {% if assistant_avatar %}<img class="nav-avatar" src="{{ assistant_avatar }}" alt="小点">{% else %}{{ icon("bot") }}{% endif %}
+      <span>小点</span>
+    </a>
+    <a href="/resume" class="{{ 'active' if active == 'resume' else '' }}">{{ icon("file-text") }}<span>简历预览</span></a>
+  </div>
+  <div class="userwrap">
+    <button class="userchip" onclick="toggleUserMenu(event)" title="切换账户">
+      <span class="uc-ava">{{ (cur_user.name or "?")[:1] }}</span>
+      <span class="uc-name" title="{{ cur_user.name }}">{{ cur_user.name }}</span>
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <div class="umenu" id="umenu" hidden>
+      <div class="um-head">
+        <span class="uc-ava">{{ (cur_user.name or "?")[:1] }}</span>
+        <div style="min-width:0;">
+          <div class="um-full" title="{{ cur_user.name }}">{{ cur_user.name }}</div>
+          <div class="um-sub">当前账户 · {{ cur_uid }}</div>
+        </div>
+      </div>
+      {% for u in users %}
+      <div class="um-item {{ 'on' if u.id == cur_uid else '' }}">
+        <span class="uc-ava sm">{{ (u.name or "?")[:1] }}</span>
+        <span class="um-nm">{{ u.name }}{% if u.id == cur_uid %}<small>（当前）</small>{% endif %}</span>
+        {% if u.id != cur_uid %}<button class="um-act" data-sw="{{ u.id }}">切换</button>{% endif %}
+        <button class="um-act" data-rn="{{ u.id }}" title="重命名">✎</button>
+        {% if users|length > 1 %}<button class="um-act danger" data-del="{{ u.id }}" title="删除账户">✕</button>{% endif %}
+      </div>
+      {% endfor %}
+      <div class="um-item" style="border-top:1px solid #eef1f4;">
+        <button class="um-act" style="width:100%;text-align:left;" onclick="location.href='/setup'">&#9881; 重新运行初始化向导</button>
+      </div>
+      <div class="um-item">
+        <button class="um-act" style="width:100%;text-align:left;" data-logout="uid">&#8617; 退出当前账户</button>
+      </div>
+      {% if lan_mode and is_remote %}
+      <div class="um-item">
+        <button class="um-act danger" style="width:100%;text-align:left;" data-logout="pair">&#128275; 解除本设备配对</button>
+      </div>
+      {% endif %}
+      <div class="um-new">
+        <input id="newUserName" maxlength="20" placeholder="新账户名称" onkeydown="if(event.key==='Enter')createUser()">
+        <button class="btn small ok" onclick="createUser()">创建</button>
+      </div>
+    </div>
+  </div>
+</nav>
+<main class="container">
+{% block content %}{% endblock %}
+</main>
+<div class="toast"></div>
+<script src="/static/app.js"></script>
+<script src="/static/region.js"></script>
+<script>
+function toggleUserMenu(e) { e.stopPropagation(); const m = document.getElementById("umenu"); m.hidden = !m.hidden; }
+document.addEventListener("click", (e) => {
+  const m = document.getElementById("umenu");
+  if (m && !m.hidden && !e.target.closest(".userwrap")) m.hidden = true;
+});
+async function userAct(fn, msg) {
+  try { await fn(); if (msg) toast(msg); location.reload(); }
+  catch (err) { toast(err.message, 5000); }
+}
+document.addEventListener("click", (e) => {
+  const sw = e.target.closest("[data-sw]");
+  if (sw) return userAct(() => api(`/api/users/${sw.dataset.sw}/switch`, { method: "POST" }));
+  const rn = e.target.closest("[data-rn]");
+  if (rn) {
+    const n = prompt("新的账户名称：");
+    if (n && n.trim()) return userAct(() => api(`/api/users/${rn.dataset.rn}`, { method: "PUT", body: { name: n.trim() } }));
+    return;
+  }
+  const dl = e.target.closest("[data-del]");
+  if (dl) {
+    if (!confirm("删除该账户会清空它的全部数据（简历条目、上传文件、个人资料），且不可恢复！确定继续？")) return;
+    return userAct(() => api(`/api/users/${dl.dataset.del}`, { method: "DELETE" }));
+  }
+});
+document.addEventListener("click", (e) => {
+  const lo = e.target.closest("[data-logout]");
+  if (!lo) return;
+  const scope = lo.dataset.logout;
+  const msg = scope === "pair"
+    ? "解除本设备的配对？（之后需重新输入配对码）"
+    : "退出当前账户，回到默认账户？";
+  if (!confirm(msg)) return;
+  api("/api/auth/logout", { method: "POST", body: { scope } })
+    .then(() => { location.href = scope === "pair" ? "/pair" : "/"; })
+    .catch(err => toast(err.message, 5000));
+});
+async function createUser() {
+  const n = document.getElementById("newUserName").value.trim();
+  if (!n) return toast("请输入账户名称");
+  await userAct(() => api("/api/users", { method: "POST", body: { name: n } }), "已创建并切换");
+}
+</script>
+{% block scripts %}{% endblock %}
+<div class="dev-credit">Developed by <b>Wolfentsz</b> · XG Resume Studio</div>
+</body>
+</html>

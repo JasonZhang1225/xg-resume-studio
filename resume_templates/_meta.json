@@ -1,0 +1,6 @@
+{
+  "classic": {"title": "求职 · 经典单栏", "tag": "求职", "accent": "#0f766e"},
+  "scholar": {"title": "保研 · 学术强调", "tag": "保研", "accent": "#1e40af"},
+  "career":  {"title": "晋升 · 履历时间轴", "tag": "晋升", "accent": "#9a3412"},
+  "minimal": {"title": "评优 · 极简黑白", "tag": "评优", "accent": "#222222"}
+}

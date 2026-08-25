@@ -1,0 +1,448 @@
+{% extends "base.html" %}
+{% block title %}个人资料 - 滴鱼简历助手{% endblock %}
+{% block content %}
+{% from "_icons.html" import icon %}
+
+<div class="card">
+  <div class="between">
+    <h2 style="margin:0;">{{ icon("user") }}基本信息</h2>
+    <button class="btn primary" onclick="saveBasicInfo()">{{ icon("check") }}保存基本信息</button>
+  </div>
+  <p class="hint">写好后点「保存基本信息」，之后可随时回来修改。</p>
+  <div class="flex" style="margin-bottom:14px;">
+    {% if profile.photo_path %}
+      <img src="{{ profile.photo_path }}" style="width:72px;height:96px;object-fit:cover;border-radius:8px;border:1px solid var(--border);">
+    {% endif %}
+    <div>
+      <button class="btn small" onclick="document.getElementById('photoInput').click()">{{ icon("camera") }}{{ "更换照片" if profile.photo_path else "上传证件照" }}</button>
+      <input type="file" id="photoInput" accept=".jpg,.jpeg,.png,.webp" hidden onchange="uploadPhoto(this)">
+    </div>
+  </div>
+  <div class="form-grid">
+    <div class="form-group"><label>姓名</label><input type="text" id="p_name" value="{{ profile.name }}"></div>
+    <div class="form-group"><label>性别</label><input type="text" id="p_gender" value="{{ profile.gender }}" placeholder="男/女"></div>
+    <div class="form-group"><label>出生年月</label><input type="text" id="p_birth" data-dpick data-min="1960" value="{{ profile.birth_date }}" placeholder="如 2003年5月"></div>
+    <div class="form-group"><label>手机号</label><input type="text" id="p_phone" value="{{ profile.phone }}"></div>
+    <div class="form-group"><label>邮箱</label><input type="text" id="p_email" value="{{ profile.email }}"></div>
+    <div class="form-group"><label>籍贯</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <select id="p_hb_prov" style="flex:1;min-width:120px;"></select>
+        <select id="p_hb_city" style="flex:1;min-width:120px;"></select>
+      </div>
+      <input type="text" id="p_hb_manual" placeholder="不在列表中？手动输入，如：台湾省嘉义市" style="margin-top:8px;">
+      <input type="hidden" id="p_hometown" value="{{ profile.hometown }}">
+    </div>
+    <div class="form-group" style="grid-column:1/-1;"><label>现居住地</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <select id="p_ad_prov" style="flex:1;min-width:120px;"></select>
+        <select id="p_ad_city" style="flex:1;min-width:120px;"></select>
+        <input type="text" id="p_addr_detail" placeholder="详细地址（区/街道/小区，可留空）" style="flex:2;min-width:200px;">
+      </div>
+      <input type="hidden" id="p_address" value="{{ profile.address }}">
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="between">
+    <h2 style="margin:0;">{{ icon("edit") }}个人简介</h2>
+    <button class="btn primary" onclick="saveSummary()">{{ icon("check") }}保存个人简介</button>
+  </div>
+  <p class="hint">写好后点「保存个人简介」，之后可随时回来修改；也可以让小点在对话里帮你改写。</p>
+  <textarea id="p_summary" style="min-height:140px;margin-top:12px;">{{ profile.summary }}</textarea>
+  {% if not profile.summary %}<div class="hint mt8">（目前还没写，先写一段 80~150 字、突出亮点和数据的简介吧）</div>{% endif %}
+</div>
+
+<div class="card">
+  <div class="between">
+    <h2 style="margin:0;">{{ icon("grad") }}教育经历</h2>
+    <button class="btn primary" onclick="addRow('edu')">{{ icon("plus") }}添加</button>
+  </div>
+  <div id="eduList" class="mt">
+    {% for e in education %}
+    <div class="cand edu-row" data-id="{{ e.id }}">
+      <div class="fields" style="padding-left:0;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));">
+        <div><label>学校</label><input type="text" class="c-school" value="{{ e.school }}"></div>
+        <div><label>学位</label><input type="text" class="c-degree" value="{{ e.degree }}" placeholder="本科/硕士/博士"></div>
+        <div><label>专业</label><input type="text" class="c-major" value="{{ e.major }}"></div>
+        <div><label>开始</label><input type="text" class="c-start" data-dpick value="{{ e.start }}"></div>
+        <div><label>结束</label><input type="text" class="c-end" data-dpick value="{{ e.end }}" {% if e.ongoing %}disabled placeholder="至今"{% endif %}></div>
+        <div><label>备注（GPA/排名等）</label><input type="text" class="c-notes" value="{{ e.notes }}"></div>
+        <div style="grid-column:1/-1;"><label>&nbsp;</label><label style="display:flex;align-items:center;gap:8px;font-weight:500;cursor:pointer;"><input type="checkbox" class="c-ongoing" {% if e.ongoing %}checked{% endif %}>在读（结束显示「至今」）</label></div>
+      </div>
+      <div style="text-align:right;margin-top:6px;"><button class="btn small danger" onclick="this.closest('.edu-row').remove()">{{ icon("trash") }}删除</button></div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="between">
+    <h2 style="margin:0;">{{ icon("file-text") }}论文发表</h2>
+    <button class="btn primary" onclick="addRow('paper')">{{ icon("plus") }}添加</button>
+  </div>
+  <div id="paperList" class="mt">
+    {% for a in papers %}
+    <div class="cand paper-row" data-id="{{ a.id }}">
+      <div class="fields" style="padding-left:0;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));">
+        <div style="grid-column:1/-1;"><label>论文标题</label><input type="text" class="c-title" value="{{ a.title }}"></div>
+        <div><label>作者</label><input type="text" class="c-authors" value="{{ a.authors }}" placeholder="李明, 张三"></div>
+        <div><label>期刊/会议</label><input type="text" class="c-venue" value="{{ a.venue }}"></div>
+        <div><label>年份</label><input type="text" class="c-year" data-dpick="year" value="{{ a.year }}"></div>
+        <div><label>卷</label><input type="text" class="c-vol" value="{{ a.volume }}" placeholder="如 42（选填）"></div>
+        <div><label>期</label><input type="text" class="c-issue" value="{{ a.issue }}" placeholder="如 3（选填）"></div>
+        <div><label>页码</label><input type="text" class="c-pages" value="{{ a.pages }}" placeholder="如 15-20（选填）"></div>
+        <div><label>类型</label><input type="text" class="c-type" value="{{ a.paper_type }}" placeholder="SCI/EI/核心/普通"></div>
+        <div style="grid-column:1/-1;"><label>备注</label><input type="text" class="c-notes" value="{{ a.notes }}"></div>
+        <div class="cite-prev" style="grid-column:1/-1;font-size:12.5px;color:#4b5b6b;background:#f4f9f7;border-left:3px solid #0f766e;padding:7px 10px;border-radius:0 8px 8px 0;word-break:break-all;"></div>
+      </div>
+      <div style="text-align:right;margin-top:6px;"><button class="btn small danger" onclick="this.closest('.paper-row').remove()">{{ icon("trash") }}删除</button></div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="between">
+    <h2 style="margin:0;">{{ icon("flask") }}项目经历</h2>
+    <button class="btn primary" onclick="addRow('project')">{{ icon("plus") }}添加</button>
+  </div>
+  <div id="projectList" class="mt">
+    {% for pr in projects %}
+    <div class="cand project-row" data-id="{{ pr.id }}">
+      <div class="fields" style="padding-left:0;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));">
+        <div><label>项目名称</label><input type="text" class="c-name" value="{{ pr.name }}"></div>
+        <div><label>担任角色</label><input type="text" class="c-role" value="{{ pr.role }}"></div>
+        <div><label>开始</label><input type="text" class="c-start" data-dpick value="{{ pr.start }}"></div>
+        <div><label>结束</label><input type="text" class="c-end" data-dpick value="{{ pr.end }}" {% if pr.ongoing %}disabled placeholder="至今"{% endif %}></div>
+        <div style="grid-column:1/-1;"><label>&nbsp;</label><label style="display:flex;align-items:center;gap:8px;font-weight:500;cursor:pointer;"><input type="checkbox" class="c-ongoing" {% if pr.ongoing %}checked{% endif %}>进行中（结束显示「至今」）</label></div>
+        <div style="grid-column:1/-1;"><label>项目描述</label><textarea class="c-desc" style="min-height:60px;">{{ pr.description }}</textarea></div>
+      </div>
+      <div style="text-align:right;margin-top:6px;"><button class="btn small danger" onclick="this.closest('.project-row').remove()">{{ icon("trash") }}删除</button></div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>技能与其他</h2>
+  <div class="form-grid">
+    <div class="form-group"><label>专业技能（逗号分隔）</label><input type="text" id="p_skills" value="{{ profile.skills|join('，') if profile.skills else '' }}"></div>
+    <div class="form-group"><label>语言能力（逗号分隔）</label><input type="text" id="p_langs" value="{{ profile.languages|join('，') if profile.languages else '' }}"></div>
+  </div>
+</div>
+
+<div style="text-align:right;margin-bottom:40px;">
+  <button class="btn ok" style="font-size:15px;padding:10px 26px;" onclick="saveProfile()">{{ icon("check") }}保存全部资料</button>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function rowHTML(type) {
+  if (type === "edu") return `
+    <div class="cand edu-row" data-id=""><div class="fields" style="padding-left:0;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));">
+      <div><label>学校</label><input type="text" class="c-school"></div>
+      <div><label>学位</label><input type="text" class="c-degree" placeholder="本科/硕士/博士"></div>
+      <div><label>专业</label><input type="text" class="c-major"></div>
+      <div><label>开始</label><input type="text" class="c-start" data-dpick></div>
+      <div><label>结束</label><input type="text" class="c-end" data-dpick></div>
+      <div><label>备注（GPA/排名等）</label><input type="text" class="c-notes"></div>
+      <div style="grid-column:1/-1;"><label>&nbsp;</label><label style="display:flex;align-items:center;gap:8px;font-weight:500;cursor:pointer;"><input type="checkbox" class="c-ongoing">在读（结束显示「至今」）</label></div>
+    </div><div style="text-align:right;margin-top:6px;"><button class="btn small danger" onclick="this.closest('.edu-row').remove()">{{ icon("trash") }}删除</button></div></div>`;
+  if (type === "paper") return `
+    <div class="cand paper-row" data-id=""><div class="fields" style="padding-left:0;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));">
+      <div style="grid-column:1/-1;"><label>论文标题</label><input type="text" class="c-title"></div>
+      <div><label>作者</label><input type="text" class="c-authors" placeholder="李明, 张三"></div>
+      <div><label>期刊/会议</label><input type="text" class="c-venue"></div>
+      <div><label>年份</label><input type="text" class="c-year" data-dpick="year"></div>
+      <div><label>卷</label><input type="text" class="c-vol" placeholder="如 42（选填）"></div>
+      <div><label>期</label><input type="text" class="c-issue" placeholder="如 3（选填）"></div>
+      <div><label>页码</label><input type="text" class="c-pages" placeholder="如 15-20（选填）"></div>
+      <div><label>类型</label><input type="text" class="c-type" placeholder="SCI/EI/核心/普通"></div>
+      <div style="grid-column:1/-1;"><label>备注</label><input type="text" class="c-notes"></div>
+      <div class="cite-prev" style="grid-column:1/-1;font-size:12.5px;color:#4b5b6b;background:#f4f9f7;border-left:3px solid #0f766e;padding:7px 10px;border-radius:0 8px 8px 0;word-break:break-all;"></div>
+    </div><div style="text-align:right;margin-top:6px;"><button class="btn small danger" onclick="this.closest('.paper-row').remove()">{{ icon("trash") }}删除</button></div></div>`;
+  return `
+    <div class="cand project-row" data-id=""><div class="fields" style="padding-left:0;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));">
+      <div><label>项目名称</label><input type="text" class="c-name"></div>
+      <div><label>担任角色</label><input type="text" class="c-role"></div>
+      <div><label>开始</label><input type="text" class="c-start" data-dpick></div>
+      <div><label>结束</label><input type="text" class="c-end" data-dpick></div>
+      <div style="grid-column:1/-1;"><label>&nbsp;</label><label style="display:flex;align-items:center;gap:8px;font-weight:500;cursor:pointer;"><input type="checkbox" class="c-ongoing">进行中（结束显示「至今」）</label></div>
+      <div style="grid-column:1/-1;"><label>项目描述</label><textarea class="c-desc" style="min-height:60px;"></textarea></div>
+    </div><div style="text-align:right;margin-top:6px;"><button class="btn small danger" onclick="this.closest('.project-row').remove()">{{ icon("trash") }}删除</button></div></div>`;
+}
+function addRow(type) {
+  const el = document.getElementById(type + "List");
+  el.insertAdjacentHTML("beforeend", rowHTML(type));
+  makeDatePickers(el.lastElementChild);
+}
+
+function collectRows(type) {
+  const map = { edu: ["school","degree","major","start","end","notes"],
+                paper: ["title","authors","venue","year","volume","issue","pages","type","notes"],
+                project: ["name","role","start","end","description"] };
+  const keyMap = { type: "paper_type" };
+  const checkKeys = { edu: ["ongoing"], project: ["ongoing"] };
+  return [...document.querySelectorAll("." + type + "-row")].map(row => {
+    const o = {};
+    map[type].forEach(k => o[keyMap[k] || k] = row.querySelector(".c-" + k)?.value.trim() ?? "");
+    (checkKeys[type] || []).forEach(k => o[k] = row.querySelector(".c-" + k)?.checked ? 1 : 0);
+    const rid = Number(row.dataset.id);
+    if (rid) o.id = rid;
+    return o;
+  });
+}
+
+// 「进行中」勾选时禁用结束时间输入
+document.addEventListener("change", (e) => {
+  if (e.target && e.target.classList.contains("c-ongoing")) {
+    const row = e.target.closest(".edu-row, .project-row");
+    const end = row?.querySelector(".c-end");
+    if (end) {
+      end.disabled = e.target.checked;
+      if (e.target.checked) end.value = "";
+      end._dpSync && end._dpSync();
+    }
+  }
+});
+
+// 页面载入：把所有时间输入框升级为「年+月」下拉
+makeDatePickers();
+
+// ---- 省市二级联动（籍贯 / 现居住地） ----
+const HB = makeRegionPicker({
+  prov: document.getElementById("p_hb_prov"),
+  city: document.getElementById("p_hb_city"),
+  manual: document.getElementById("p_hb_manual"),
+  initial: {{ profile.hometown|tojson }},
+  onChange: () => { setVal("#p_hometown", HB.get()); scheduleAutoSave(); },
+});
+const AD = makeRegionPicker({
+  prov: document.getElementById("p_ad_prov"),
+  city: document.getElementById("p_ad_city"),
+  detail: document.getElementById("p_addr_detail"),
+  initial: {{ profile.address|tojson }},
+  onChange: () => { setVal("#p_address", AD.get()); scheduleAutoSave(); },
+});
+setVal("#p_hometown", HB.get());
+setVal("#p_address", AD.get());
+
+// ---- 论文引用格式实时预览（GB/T 7714，与简历/Word 导出同一套逻辑） ----
+function paperCitationJS(a) {
+  const g = k => String(a[k] ?? "").trim().replace(/\.+$/, "");
+  const ptype = g("paper_type") || g("type");
+  const marker = ptype.includes("会议") ? "[C]" : ptype.includes("学位") ? "[D]" : "[J]";
+  const authors = g("authors"), title = g("title"), venue = g("venue"), year = g("year");
+  const vol = g("volume"), issue = g("issue"), pages = g("pages");
+  let s = (authors ? authors + ". " : "") + (title ? title + marker + ". " : "");
+  let rest = [venue, year].filter(Boolean).join(", ");
+  if (vol || issue || pages) {
+    const vi = vol && issue ? `${vol}(${issue})` : (vol || (issue ? `(${issue})` : ""));
+    rest = [rest, vi && pages ? `${vi}:${pages}` : (vi || pages)].filter(Boolean).join(", ");
+  }
+  const out = (s + rest).trim();
+  return out ? (out.endsWith(".") ? out : out + ".") : "";
+}
+function refreshCitePreview(row) {
+  const el = row.querySelector(".cite-prev");
+  if (!el) return;
+  const q = c => row.querySelector(c)?.value ?? "";
+  const s = paperCitationJS({ authors: q(".c-authors"), title: q(".c-title"), venue: q(".c-venue"),
+    year: q(".c-year"), volume: q(".c-vol"), issue: q(".c-issue"), pages: q(".c-pages"), paper_type: q(".c-type") });
+  el.textContent = s ? "引用预览：" + s : "引用预览：（按 作者. 标题[J]. 期刊, 年份, 卷(期):页码. 自动生成）";
+}
+function refreshAllCite() { document.querySelectorAll(".paper-row").forEach(refreshCitePreview); }
+refreshAllCite();
+document.addEventListener("input", (e) => {
+  const row = e.target.closest?.(".paper-row");
+  if (row) refreshCitePreview(row);
+});
+
+async function saveBasicInfo() {
+  setVal("#p_hometown", HB.get());
+  setVal("#p_address", AD.get());
+  await api("/api/profile/basic", { method: "PUT", body: {
+    name: val("#p_name"), gender: val("#p_gender"), birth_date: val("#p_birth"),
+    phone: val("#p_phone"), email: val("#p_email"), address: val("#p_address"),
+    hometown: val("#p_hometown") } });
+  toast("基本信息已保存");
+}
+
+async function saveSummary() {
+  await api("/api/profile/summary", { method: "POST", body: { summary: val("#p_summary") } });
+  toast("个人简介已保存");
+}
+
+function collectProfilePayload() {
+  setVal("#p_hometown", HB.get());
+  setVal("#p_address", AD.get());
+  return {
+    profile: {
+      name: val("#p_name"), gender: val("#p_gender"), birth_date: val("#p_birth"),
+      phone: val("#p_phone"), email: val("#p_email"), address: val("#p_address"),
+      hometown: val("#p_hometown"),
+      summary: val("#p_summary"),
+      skills: val("#p_skills").split(/[，,]/).map(s => s.trim()).filter(Boolean),
+      languages: val("#p_langs").split(/[，,]/).map(s => s.trim()).filter(Boolean),
+    },
+    education: collectRows("edu"),
+    papers: collectRows("paper"),
+    projects: collectRows("project"),
+  };
+}
+
+async function saveProfile(silent) {
+  const r = await api("/api/profile", { method: "PUT", body: collectProfilePayload() });
+  // 把后端返回的新行 id 回填到 DOM，否则自动保存会把这些「无 id」的行反复重复插入
+  [["education", "edu-row"], ["papers", "paper-row"], ["projects", "project-row"]].forEach(([key, cls]) => {
+    const ids = r[key];
+    if (!Array.isArray(ids)) return;
+    document.querySelectorAll("." + cls).forEach((row, i) => {
+      if (ids[i] && !Number(row.dataset.id)) row.dataset.id = ids[i];
+    });
+  });
+  if (!silent) toast("资料已保存");
+}
+
+// ---- 自动保存：改任何字段后 1.5 秒自动保存，退出页面时兜底提交 ----
+let autoSaveTimer = null;
+let lastAutoToast = 0;
+function autoSaveToast() {
+  const now = Date.now();
+  if (now - lastAutoToast < 5000) return;
+  lastAutoToast = now;
+  toast("已自动保存");
+}
+function scheduleAutoSave() {
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(async () => {
+    try {
+      await saveProfile(true);
+      autoSaveToast();
+    } catch (err) { toast("自动保存失败：" + err.message, 5000); }
+  }, 1500);
+}
+document.addEventListener("input", (e) => {
+  if (e.target.type === "file") return;
+  if (e.target.matches("#p_name,#p_gender,#p_birth,#p_phone,#p_email,#p_hb_manual,#p_addr_detail,#p_summary,#p_skills,#p_langs,.c-school,.c-degree,.c-major,.c-start,.c-end,.c-notes,.c-title,.c-authors,.c-venue,.c-year,.c-vol,.c-issue,.c-pages,.c-type,.c-name,.c-role,.c-desc")) {
+    scheduleAutoSave();
+  }
+});
+["eduList", "paperList", "projectList"].forEach((id) => {
+  const el = document.getElementById(id);
+  if (el) new MutationObserver(() => scheduleAutoSave()).observe(el, { childList: true });
+});
+window.addEventListener("pagehide", () => {
+  if (!autoSaveTimer) return;
+  clearTimeout(autoSaveTimer);
+  try {
+    fetch("/api/profile", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(collectProfilePayload()),
+      keepalive: true,
+    }).catch(() => {});
+  } catch (err) { /* 忽略 */ }
+});
+
+async function uploadPhoto(input) {
+  if (!input.files.length) return;
+  const file = input.files[0];
+  input.value = "";
+  openCropper(file);
+}
+
+/* ---- 证件照裁剪：固定 3:4 输出，拖动定位 + 滚轮/滑杆缩放 ---- */
+function openCropper(file) {
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    const CW = 300, CH = 400;
+    const base = Math.max(CW / img.width, CH / img.height);
+    let scale = base;
+    let ox = (CW - img.width * scale) / 2, oy = (CH - img.height * scale) / 2;
+    openModal("调整证件照（3:4）",
+      `<div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;justify-content:center;">
+        <canvas id="cropCanvas" width="${CW}" height="${CH}" style="border-radius:10px;cursor:grab;background:#111827;touch-action:none;max-width:100%;"></canvas>
+        <div style="flex:1;min-width:180px;">
+          <label style="font-size:13px;font-weight:600;">缩放</label>
+          <input type="range" id="cropZoom" min="100" max="400" value="100" style="width:100%;margin-top:6px;">
+          <div class="hint mt8">拖动图片调整位置，滚轮或滑杆缩放。<br>确认后按 3:4 标准证件照比例输出。</div>
+        </div>
+      </div>`,
+      `<button class="btn" onclick="closeModal()">取消</button>
+       <button class="btn ok" onclick="confirmCrop()">确认并上传</button>`);
+    const cv = document.getElementById("cropCanvas"), ctx = cv.getContext("2d");
+    const clamp = () => {
+      const w = img.width * scale, h = img.height * scale;
+      if (w <= CW) ox = (CW - w) / 2; else ox = Math.min(0, Math.max(CW - w, ox));
+      if (h <= CH) oy = (CH - h) / 2; else oy = Math.min(0, Math.max(CH - h, oy));
+    };
+    const draw = () => {
+      ctx.fillStyle = "#111827"; ctx.fillRect(0, 0, CW, CH);
+      ctx.drawImage(img, ox, oy, img.width * scale, img.height * scale);
+      ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = 1.5;
+      ctx.strokeRect(0.75, 0.75, CW - 1.5, CH - 1.5);
+    };
+    draw();
+    let drag = null;
+    cv.addEventListener("pointerdown", e => { drag = { x: e.clientX, y: e.clientY, ox, oy }; cv.setPointerCapture(e.pointerId); cv.style.cursor = "grabbing"; });
+    cv.addEventListener("pointermove", e => { if (!drag) return; ox = drag.ox + (e.clientX - drag.x); oy = drag.oy + (e.clientY - drag.y); clamp(); draw(); });
+    cv.addEventListener("pointerup", () => { drag = null; cv.style.cursor = "grab"; });
+    cv.addEventListener("wheel", e => {
+      e.preventDefault();
+      const cx = CW / 2, cy = CH / 2;
+      const rx = (cx - ox) / (img.width * scale), ry = (cy - oy) / (img.height * scale);
+      scale = Math.min(base * 4, Math.max(base, scale * (e.deltaY < 0 ? 1.08 : 0.92)));
+      ox = cx - rx * img.width * scale; oy = cy - ry * img.height * scale;
+      clamp(); draw();
+      document.getElementById("cropZoom").value = Math.round(scale / base * 100);
+    }, { passive: false });
+    document.getElementById("cropZoom").addEventListener("input", (e) => {
+      const cx = CW / 2, cy = CH / 2;
+      const rx = (cx - ox) / (img.width * scale), ry = (cy - oy) / (img.height * scale);
+      scale = base * Number(e.target.value) / 100;
+      ox = cx - rx * img.width * scale; oy = cy - ry * img.height * scale;
+      clamp(); draw();
+    });
+    window._cropState = { img, CW, CH, get scale() { return scale; }, get ox() { return ox; }, get oy() { return oy; } };
+  };
+  img.src = url;
+}
+
+async function confirmCrop() {
+  const st = window._cropState;
+  if (!st) return;
+  const W = 450, H = 600;
+  const out = document.createElement("canvas");
+  out.width = W; out.height = H;
+  const sx = (0 - st.ox) / st.scale, sy = (0 - st.oy) / st.scale;
+  const sw = st.CW / st.scale, sh = st.CH / st.scale;
+  out.getContext("2d").drawImage(st.img, sx, sy, sw, sh, 0, 0, W, H);
+  const blob = await new Promise(r => out.toBlob(r, "image/jpeg", 0.92));
+  const fd = new FormData();
+  fd.append("file", new File([blob], "photo.jpg", { type: "image/jpeg" }));
+  try {
+    await api("/api/profile/photo", { method: "POST", body: fd });
+    closeModal();
+    toast("照片已更新");
+    setTimeout(() => location.reload(), 400);
+  } catch (e) { toast(e.message, 5000); }
+}
+
+// ---- Ctrl+S 手动保存；有未落盘改动时离开页面先提示 ----
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+    e.preventDefault();
+    saveProfile();
+  }
+});
+window.addEventListener("beforeunload", (e) => {
+  if (autoSaveTimer) { e.preventDefault(); e.returnValue = ""; }
+});
+</script>
+{% endblock %}
+

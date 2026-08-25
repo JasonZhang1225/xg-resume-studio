@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}小点助手 - 滴鱼简历助手{% endblock %}
+{% block content %}
+{% from "_icons.html" import icon %}
+
+<div class="chat-shell">
+  <div class="chat-head">
+    <div class="chat-avatar-wrap">
+      {% if assistant_avatar %}
+        <img class="chat-avatar" src="{{ assistant_avatar }}" alt="小点头像">
+      {% else %}
+        <span class="chat-avatar">{{ icon("bot") }}</span>
+      {% endif %}
+      <span class="cam" title="上传小点头像" onclick="document.getElementById('avatarInput').click()">{{ icon("camera") }}</span>
+      <input type="file" id="avatarInput" accept=".jpg,.jpeg,.png,.webp" hidden onchange="uploadAvatar(this)">
+    </div>
+    <div style="flex:1;">
+      <div class="name">小点</div>
+      <div class="status">在线 · 已了解你的简历数据</div>
+    </div>
+    <button class="btn small" onclick="clearChat()">{{ icon("refresh") }}清空对话</button>
+  </div>
+
+  {% if not has_ai %}
+  <div class="alert-banner">
+    {{ icon("alert") }}
+    <span>还没有配置 AI 的 API Key。请先到 <a href="/">首页底部</a> 填写 DeepSeek 等接口的 Key，小点才能开始工作。</span>
+  </div>
+  {% endif %}
+
+  <div id="chatBox" class="chat-box"></div>
+
+  <div class="chips">
+    <button class="chip" onclick="quickAsk('我想了解我的简历适合什么用途，帮我分析一下')">{{ icon("sparkles") }}分析用途</button>
+    <button class="chip" onclick="quickAsk('请根据我的简历情况，帮我写一段 120 字左右的个人简介')">{{ icon("edit") }}写个人简介</button>
+    <button class="chip" onclick="quickAsk('我的获奖和任职描述太平淡了，帮我优化一下')">{{ icon("award") }}优化描述</button>
+    <button class="chip" onclick="quickAsk('我的简历还有哪些不足？给我一份改进清单')">{{ icon("list") }}改进建议</button>
+  </div>
+
+  <div class="chat-inputbar">
+    <input type="text" id="chatInput" placeholder="和小点说说这份简历要用在哪里…（回车发送）" onkeydown="if(event.key==='Enter')sendMessage()">
+    <button class="send-btn" id="sendBtn" onclick="sendMessage()" aria-label="发送">{{ icon("send") }}</button>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const KEY = "xiaodian_history_{{ cur_uid }}";
+const ASSISTANT_AVATAR = {{ (assistant_avatar | tojson) if assistant_avatar else "null" }};
+let history = [];
+let busy = false;
+
+function loadHistory() {
+  try { history = JSON.parse(localStorage.getItem(KEY) || "[]"); } catch (e) { history = []; }
+}
+function saveHistory() {
+  localStorage.setItem(KEY, JSON.stringify(history.slice(-40)));
+}
+
+function avatarHTML() {
+  return ASSISTANT_AVATAR
+    ? `<img class="m-avatar" src="${esc(ASSISTANT_AVATAR)}" alt="小点">`
+    : `<span class="m-avatar"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg></span>`;
+}
+
+function bubble(role, text, withApply) {
+  const mine = role === "user";
+  const avatar = mine
+    ? `<span class="m-avatar"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>`
+    : avatarHTML();
+  const applyBtn = withApply ? `<div class="apply"><button class="btn small ok" onclick="applySummary(this)">采纳为个人简介</button></div>` : "";
+  return `<div class="msg ${mine ? "user" : ""}">${mine ? "" : avatar}
+    <div class="bubble">${esc(text)}${applyBtn}</div>
+    ${mine ? avatar : ""}
+  </div>`;
+}
+
+function renderChat() {
+  const box = document.getElementById("chatBox");
+  if (!history.length) {
+    box.innerHTML = bubble("assistant", "你好，我是小点\n\n我已经了解了你的简历数据。告诉我这份简历打算用在什么地方（比如：保研申请、求职、奖学金评定、评优评先），我会帮你分析并给出修改建议。");
+    return;
+  }
+  box.innerHTML = history.map(m => bubble(m.role, m.content, m.role === "assistant")).join("");
+  box.scrollTop = box.scrollHeight;
+}
+
+function addMsg(role, content) {
+  history.push({ role, content });
+  saveHistory();
+  const box = document.getElementById("chatBox");
+  box.insertAdjacentHTML("beforeend", bubble(role, content, role === "assistant"));
+  box.scrollTop = box.scrollHeight;
+}
+
+function typingIndicator() {
+  const box = document.getElementById("chatBox");
+  const el = document.createElement("div");
+  el.id = "typing";
+  el.innerHTML = `${avatarHTML()}<div class="bubble typing"><span></span><span></span><span></span></div>`;
+  el.classList.add("msg");
+  box.appendChild(el);
+  box.scrollTop = box.scrollHeight;
+}
+
+async function sendMessage() {
+  const input = document.getElementById("chatInput");
+  const text = input.value.trim();
+  if (!text || busy) return;
+  input.value = "";
+  addMsg("user", text);
+  typingIndicator();
+  busy = true;
+  document.getElementById("sendBtn").disabled = true;
+  try {
+    const r = await api("/api/chat", { method: "POST", body: { messages: history } });
+    document.getElementById("typing")?.remove();
+    addMsg("assistant", r.reply);
+  } catch (err) {
+    document.getElementById("typing")?.remove();
+    const box = document.getElementById("chatBox");
+    box.insertAdjacentHTML("beforeend", `<div class="msg"><span class="m-avatar" style="background:var(--danger-soft);color:var(--danger);"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></span><div class="bubble" style="color:var(--danger);">${esc(err.message)}</div></div>`);
+  } finally {
+    busy = false;
+    document.getElementById("sendBtn").disabled = false;
+  }
+}
+
+function quickAsk(text) {
+  document.getElementById("chatInput").value = text;
+  sendMessage();
+}
+
+async function applySummary(btn) {
+  const text = btn.closest(".bubble").childNodes[0].textContent;
+  try {
+    await api("/api/profile/summary", { method: "POST", body: { summary: text } });
+    toast("已应用到「个人简介」，可到简历预览查看");
+    btn.textContent = "已采纳 ✓";
+    btn.disabled = true;
+  } catch (err) { toast(err.message, 5000); }
+}
+
+async function uploadAvatar(input) {
+  if (!input.files.length) return;
+  const fd = new FormData();
+  fd.append("file", input.files[0]);
+  const btn = document.querySelector(".chat-avatar-wrap .cam");
+  btn.disabled = true;
+  try {
+    await api("/api/assistant/avatar", { method: "POST", body: fd });
+    toast("小点头像已更新");
+    location.reload();
+  } catch (err) {
+    toast(err.message, 5000);
+    btn.disabled = false;
+  }
+}
+
+function clearChat() {
+  if (!confirm("确定清空对话记录吗？")) return;
+  history = [];
+  localStorage.removeItem(KEY);
+  renderChat();
+}
+
+loadHistory();
+renderChat();
+</script>
+{% endblock %}

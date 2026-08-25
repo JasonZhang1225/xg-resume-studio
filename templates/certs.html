@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+{% block title %}证书归档 - 滴鱼简历助手{% endblock %}
+{% block content %}
+{% from "_icons.html" import icon %}
+
+<div class="summary-bar">
+  <span class="item">{{ icon("image") }}证书 <span class="num">{{ total }}</span> 份</span>
+  <span class="dot"></span>
+  <span class="item">{{ icon("tag") }}<span class="num">{{ cat_counts|length }}</span> 个分类</span>
+  <span class="dot"></span>
+  <span class="item">{{ icon("camera") }}拍照 / 截图 / 扫描件均可，上传后自动识别归类</span>
+</div>
+
+<div class="card">
+  <h2>{{ icon("upload") }}上传证书照片</h2>
+  <p class="hint">支持 jpg / png / webp / pdf。上传后系统自动 OCR 识别标题、类别、日期和发证单位，并按年份归档；识别结果可随时点开修改。</p>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+    <div class="dropzone" id="dropzone" style="flex:1;min-width:260px;">
+      <div class="dz-icon">{{ icon("upload") }}</div>
+      <div style="font-weight:600;margin-top:4px;">点击选择或拖拽图片到这里</div>
+      <div class="hint" style="margin-top:4px;">也可以 Ctrl+V 粘贴截图，一次可选多个文件</div>
+    </div>
+    <button class="btn primary" onclick="document.getElementById('camInput').click()" style="align-self:stretch;min-width:150px;">
+      {{ icon("camera") }}手机拍照上传
+    </button>
+    <input type="file" id="camInput" accept="image/*" capture="environment" multiple hidden>
+  </div>
+  <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.bmp,.webp,.tif,.tiff,.pdf" multiple hidden>
+  <div id="uploadStatus" class="hint mt8"></div>
+</div>
+
+{% if total %}
+<div class="card">
+  <div class="between" style="flex-wrap:wrap;">
+    <div class="chips" id="catChips">
+      <button class="chip on" data-cat="">全部（{{ total }}）</button>
+      {% for cat, n in cat_counts.items() %}
+      <button class="chip" data-cat="{{ cat }}">{{ icon("tag") }}{{ cat }}（{{ n }}）</button>
+      {% endfor %}
+    </div>
+    <div class="flex">
+      <select id="yearSel" onchange="applyFilter()">
+        <option value="">全部年份</option>
+        {% for g in groups %}<option value="{{ g.year }}">{{ g.year }}（{{ g.items|length }}）</option>{% endfor %}
+      </select>
+      <input id="searchBox" placeholder="搜索标题 / 单位 / 备注…" oninput="applyFilter()" style="min-width:200px;">
+    </div>
+  </div>
+</div>
+
+{% for g in groups %}
+<section class="year-group" data-year="{{ g.year }}">
+  <div class="year-head">
+    <span>{{ g.year }}</span><small>{{ g.items|length }} 份</small>
+  </div>
+  {% set group_id = loop.index0 %}
+  <div class="cert-grid">
+    {% for c in g.items %}
+    <div class="cert-card" data-id="{{ c.id }}" data-cat="{{ c.category or '其他' }}"
+         data-text="{{ (c.title ~ ' ' ~ (c.issuer or '') ~ ' ' ~ (c.notes or '') ~ ' ' ~ (c.date or '')) | lower }}"
+         onclick="openCert({{ c.id }})">
+      <div class="cert-thumb">
+        {% if c.thumb_url %}<img src="{{ c.thumb_url }}" loading="lazy" alt="{{ c.title }}">
+        {% elif c.url and c.url.endswith('.pdf') %}<div class="cert-ph">{{ icon("file-text") }}</div>
+        {% else %}<div class="cert-ph">{{ icon("image") }}</div>{% endif %}
+        <span class="tag cert-cat">{{ c.category or "其他" }}</span>
+      </div>
+      <div class="cert-info">
+        <div class="cert-title" title="{{ c.title }}">{{ c.title }}</div>
+        <div class="cert-meta">{{ c.date or "未标年份" }}{% if c.issuer %}<span title="{{ c.issuer }}"> · {{ c.issuer[:18] }}{% if c.issuer|length > 18 %}…{% endif %}</span>{% endif %}</div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
+<div class="card" id="noMatchTip" style="display:none;">
+  <div class="empty">没有符合当前筛选条件的证书</div>
+</div>
+{% else %}
+<div class="card">
+  <div class="empty" style="padding:36px 0;">
+    <p style="font-size:16px;font-weight:600;">还没有归档的证书</p>
+    <p class="hint">把拍好的获奖证书、奖学金证明、资格证照片传上来，系统会自动识别并按年份整理好。</p>
+  </div>
+</div>
+{% endif %}
+
+<script>window.CERTS = {{ certs | tojson }};</script>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const dropzone = document.getElementById("dropzone");
+const fileInput = document.getElementById("fileInput");
+const camInput = document.getElementById("camInput");
+if (dropzone) {
+  dropzone.addEventListener("click", () => fileInput.click());
+  dropzone.addEventListener("dragover", e => { e.preventDefault(); dropzone.classList.add("drag"); });
+  dropzone.addEventListener("dragleave", () => dropzone.classList.remove("drag"));
+  dropzone.addEventListener("drop", e => { e.preventDefault(); dropzone.classList.remove("drag"); handleCerts(e.dataTransfer.files); });
+}
+fileInput && fileInput.addEventListener("change", () => { handleCerts(fileInput.files); fileInput.value = ""; });
+camInput && camInput.addEventListener("change", () => { handleCerts(camInput.files); camInput.value = ""; });
+
+// Ctrl+V 粘贴证书/成绩截图直接归档
+document.addEventListener("paste", (e) => {
+  if (!e.clipboardData || !e.clipboardData.items || !dropzone) return;
+  const imgs = [...e.clipboardData.items]
+    .filter(it => it.kind === "file" && it.type.startsWith("image/"))
+    .map(it => it.getAsFile()).filter(Boolean);
+  if (!imgs.length) return;
+  e.preventDefault();
+  toast(`检测到 ${imgs.length} 张粘贴图片，开始识别归档…`);
+  const named = imgs.map((f, i) => new File([f], f.name || `剪贴板图片_${i + 1}.png`, { type: f.type || "image/png" }));
+  handleCerts(named);
+});
+
+async function handleCerts(files) {
+  const arr = [...files].filter(Boolean);
+  if (!arr.length) return;
+  const status = document.getElementById("uploadStatus");
+  const done = [];
+  const errors = [];
+  for (let i = 0; i < arr.length; i++) {
+    const f = arr[i];
+    status.innerHTML = `
+      <div class="up-now">
+        <span class="up-name" title="${esc(f.name)}">识别归档中：${esc(f.name)}${arr.length > 1 ? `（${i + 1}/${arr.length}）` : ""}</span>
+        <div class="up-bar"><div class="up-fill" style="width:0%"></div></div>
+        <span class="up-pct">0%</span>
+      </div>`;
+    const fill = status.querySelector(".up-fill"), pct = status.querySelector(".up-pct");
+    try {
+      const r = await apiUpload("/api/certs/upload", f, frac => {
+        fill.style.width = (frac * 100).toFixed(1) + "%";
+        pct.textContent = Math.round(frac * 100) + "%";
+        if (frac >= 1) pct.textContent = "识别中…";
+      });
+      done.push(r);
+    } catch (err) { errors.push(`${f.name}：${err.message}`); }
+  }
+  if (errors.length) toast(errors.join("；"), 6000);
+  const names = done.map(c => `《${c.title}》`).join("、");
+  status.textContent = errors.length
+    ? `已归档 ${done.length} 份，${errors.length} 个失败。`
+    : `已归档 ${done.length} 份：${names}`;
+  if (done.length) setTimeout(() => location.reload(), 900);
+}
+
+/* ---- 筛选 ---- */
+let fCat = "";
+document.querySelectorAll("#catChips .chip").forEach(ch => {
+  ch.addEventListener("click", () => {
+    document.querySelectorAll("#catChips .chip").forEach(x => x.classList.remove("on"));
+    ch.classList.add("on");
+    fCat = ch.dataset.cat;
+    applyFilter();
+  });
+});
+
+function applyFilter() {
+  const year = document.getElementById("yearSel")?.value || "";
+  const q = (document.getElementById("searchBox")?.value || "").trim().toLowerCase();
+  let anyVisible = false;
+  document.querySelectorAll(".year-group").forEach(g => {
+    let n = 0;
+    g.querySelectorAll(".cert-card").forEach(card => {
+      const okCat = !fCat || card.dataset.cat === fCat;
+      const okYear = !year || g.dataset.year === year;
+      const okQ = !q || (card.dataset.text || "").includes(q);
+      const show = okCat && okYear && okQ;
+      card.style.display = show ? "" : "none";
+      if (show) n++;
+    });
+    g.style.display = n ? "" : "none";
+    if (n) anyVisible = true;
+  });
+  const tip = document.getElementById("noMatchTip");
+  if (tip) tip.style.display = anyVisible ? "none" : "";
+}
+</script>
+<script>
+/* ---- 详情弹窗 ---- */
+let curCert = null;
+
+function openCert(id) {
+  const c = window.CERTS.find(x => x.id === id);
+  if (!c) return;
+  curCert = c;
+  openModal(`证书详情`,
+    `<div class="cert-detail">
+       <a class="cd-preview" href="${esc(c.url)}" target="_blank" title="点击查看原图">
+         ${c.thumb_url ? `<img src="${esc(c.thumb_url)}" alt="">` : '<div class="cert-ph big">{{ icon("file-text") }}</div>'}
+         <span class="hint">点击查看原图</span>
+       </a>
+       <div class="cd-form">
+         <div class="form-group"><label>证书名称</label><input id="cdTitle" value="${esc(c.title)}"></div>
+         <div class="form-grid">
+           <div class="form-group"><label>分类</label>
+             <input id="cdCat" list="catList" value="${esc(c.category)}" placeholder="竞赛获奖 / 奖学金 / 资格证书…">
+           </div>
+           <div class="form-group"><label>获得时间</label><input id="cdDate" data-dpick value="${esc(c.date)}"></div>
+           <div class="form-group"><label>级别</label><input id="cdLevel" value="${esc(c.level)}" placeholder="国家级/省级/校级"></div>
+           <div class="form-group"><label>颁发单位</label><input id="cdIssuer" value="${esc(c.issuer)}"></div>
+         </div>
+         <div class="form-group"><label>备注</label><textarea id="cdNotes" rows="2">${esc(c.notes)}</textarea></div>
+         <details class="mt8"><summary class="hint">查看识别出的原始文字</summary>
+           <pre style="white-space:pre-wrap;background:#f4fbf8;padding:12px;border-radius:8px;max-height:180px;overflow:auto;font-size:13px;">${esc(c.ocr_text || "(未识别出文字)")}</pre>
+         </details>
+       </div>
+     </div>
+     <datalist id="catList">
+       <option value="奖学金"><option value="荣誉称号"><option value="竞赛获奖">
+       <option value="资格证书"><option value="聘书任职"><option value="结业培训"><option value="其他">
+     </datalist>`,
+    `<button class="btn" onclick="reanalyzeCert()">{{ icon("refresh") }}重新识别</button>
+     <button class="btn soft" onclick="certToAward()">{{ icon("award") }}转为获奖条目</button>
+     <button class="btn danger" onclick="deleteCert()">{{ icon("trash") }}删除</button>
+     <button class="btn primary" onclick="saveCert()">{{ icon("check") }}保存修改</button>`);
+  makeDatePickers(document.querySelector(".modal-body"));
+}
+
+async function saveCert() {
+  if (!curCert) return;
+  await api(`/api/certs/${curCert.id}`, { method: "PUT", body: {
+    title: val("#cdTitle"), category: val("#cdCat"), date: val("#cdDate"),
+    level: val("#cdLevel"), issuer: val("#cdIssuer"), notes: document.getElementById("cdNotes").value.trim(),
+  }});
+  Object.assign(curCert, { title: val("#cdTitle"), category: val("#cdCat"), date: val("#cdDate"),
+                           level: val("#cdLevel"), issuer: val("#cdIssuer"),
+                           notes: document.getElementById("cdNotes").value.trim() });
+  syncCard(curCert);
+  closeModal();
+  toast("已保存");
+}
+
+async function deleteCert() {
+  if (!curCert || !confirm(`确定删除《${curCert.title}》吗？图片文件也会一并删除，不可恢复。`)) return;
+  await api(`/api/certs/${curCert.id}`, { method: "DELETE" });
+  closeModal();
+  location.reload();
+}
+
+async function reanalyzeCert() {
+  if (!curCert) return;
+  if (!confirm("重新识别会用最新的 OCR 结果覆盖标题/分类/日期等字段（备注保留）。继续？")) return;
+  toast("正在重新识别…");
+  try {
+    const r = await api(`/api/certs/${curCert.id}/reanalyze`, { method: "POST" });
+    Object.assign(curCert, r);
+    openCert(curCert.id);
+    refreshDatePickers(document.querySelector(".modal-body"));
+    toast("识别完成，请核对字段");
+  } catch (err) { toast(err.message, 5000); }
+}
+
+async function certToAward() {
+  if (!curCert) return;
+  try {
+    const r = await api(`/api/certs/${curCert.id}/to-award`, { method: "POST" });
+    toast(`${r.message}${r.attached ? "，证书图片已作为佐证" : ""}，可到「获奖与任职」页查看`);
+  } catch (err) { toast(err.message, 5000); }
+}
+
+function syncCard(c) {
+  const card = document.querySelector(`.cert-card[data-id="${c.id}"]`);
+  if (!card) return;
+  card.dataset.cat = c.category || "其他";
+  card.dataset.text = `${c.title} ${c.issuer || ""} ${c.notes || ""} ${c.date || ""}`.toLowerCase();
+  card.querySelector(".cert-cat").textContent = c.category || "其他";
+  card.querySelector(".cert-title").textContent = c.title;
+  card.querySelector(".cert-meta").innerHTML =
+    esc(c.date || "未标年份") + (c.issuer ? ` · ${esc(String(c.issuer).slice(0, 18))}` : "");
+}
+</script>
+{% endblock %}

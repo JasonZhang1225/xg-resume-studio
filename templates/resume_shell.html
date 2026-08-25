@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect width='24' height='24' rx='6' fill='%230f766e'/><path d='M13 4H8a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V8z' fill='none' stroke='white' stroke-width='1.6'/><path d='M13 4v4h4' fill='none' stroke='white' stroke-width='1.6' stroke-linejoin='round'/></svg>">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>简历预览 - 滴鱼简历助手</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .toolbar { max-width: 900px; margin: 16px auto 14px; padding: 0 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .toolbar .spacer { flex: 1; }
+  .swatches { display: flex; gap: 5px; align-items: center; padding: 3px 8px; background: #fff; border: 1px solid var(--border); border-radius: 10px; }
+  .swatch { width: 18px; height: 18px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }
+  .swatch.on { border-color: #333; box-shadow: inset 0 0 0 2px #fff; }
+  select#densitySel { width: auto; }
+
+  /* 模板选择卡片墙 */
+  .twall { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; margin-bottom: 6px; }
+  .tcard { cursor: pointer; text-align: center; }
+  .tcard .thumb { aspect-ratio: 210 / 280; border-radius: 10px; overflow: hidden;
+    background: #fff; border: 2px solid var(--border); position: relative;
+    transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
+  .tcard:hover .thumb { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(15,23,42,.12); border-color: var(--ta, var(--primary)); }
+  .tcard.cur .thumb { border-color: var(--ta, var(--primary)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ta, var(--primary)) 22%, #fff); }
+  .tcard.cur::after { content: "使用中"; position: absolute; top: 8px; right: -26px; transform: rotate(45deg);
+    background: var(--ta, var(--primary)); color: #fff; font-size: 11px; padding: 2px 28px; margin-top: 2px; }
+  .th-band { height: 26px; background: var(--ta, #888); position: relative; }
+  .th-ava { position: absolute; left: 10px; top: 8px; width: 30px; height: 38px; background: rgba(255,255,255,.85); border-radius: 3px; }
+  .th-name { position: absolute; left: 48px; top: 12px; width: 46%; height: 9px; background: rgba(255,255,255,.9); border-radius: 4px; }
+  .th-line { height: 5px; background: #e3e7ec; border-radius: 3px; margin: 9px 12px 0; }
+  .th-line.accent { background: color-mix(in srgb, var(--ta, #888) 45%, #fff); }
+  .tcard.custom .thumb { border-style: dashed; display: flex; align-items: center; justify-content: center; color: #99a; font-size: 13px; }
+  .tcap { margin-top: 7px; font-size: 13px; font-weight: 600; display: flex; justify-content: center; gap: 6px; align-items: center; }
+  .tcap .del { font-weight: 400; }
+
+  /* 模块面板 */
+  .sec-row { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 6px; background: #fff; }
+  .sec-row label { flex: 1; cursor: pointer; font-weight: 500; }
+  @media print {
+    .toolbar, .modal-mask, .toast { display: none !important; }
+    body { background: #fff; }
+  }
+</style>
+</head>
+<body>
+<div class="toolbar no-print">
+  <a class="btn small" href="/">首页</a>
+  <select id="userSel" title="当前账户">
+    {% for u in users %}<option value="{{ u.id }}" {{ 'selected' if u.id == cur_uid else '' }}>{{ u.name }}</option>{% endfor %}
+  </select>
+  <button class="btn small primary" id="btnTemplates">模板</button>
+  <button class="btn small" id="btnLayout">模块显隐与排序</button>
+  <div class="swatches" id="swatches" title="主题色"></div>
+  <select id="densitySel">
+    <option value="compact">紧凑</option>
+    <option value="standard">标准</option>
+    <option value="relaxed">宽松</option>
+  </select>
+  <span class="spacer"></span>
+  <a class="btn small" href="/intro.docx">个人介绍 Word</a>
+  <a class="btn small" href="/resume.docx">简历 Word</a>
+  <button class="btn primary small" onclick="window.print()">打印 / 存 PDF</button>
+</div>
+
+<div class="resume-body rs-d-{{ density }}"><div class="rs-page" style="--r-accent: {{ accent }};">{{ body_html | safe }}</div></div>
+
+<div class="toast"></div>
+<script src="/static/app.js"></script>
+<script>
+const QS = new URLSearchParams(location.search);
+const CUR_TPL = {{ current_template | tojson }};
+const DENSITY = {{ density | tojson }};
+const TMETA = {{ tmeta | tojson }};
+const ACCENTS = ["#0f766e", "#1e40af", "#9a3412", "#b91c1c", "#7c3aed", "#222222"];
+const SEC_LABELS = { summary: "个人简介", education: "教育背景", papers: "论文发表",
+                     projects: "项目经历", awards: "获奖情况", positions: "任职经历", skills: "技能与其他" };
+
+function navWith(patch) {
+  const q = new URLSearchParams(QS);
+  Object.entries(patch).forEach(([k, v]) => {
+    if (v === null) q.delete(k); else q.set(k, v);
+  });
+  location.href = "/resume?" + q.toString();
+}
+
+// ----- 主题色 / 密度 -----
+(function initStyleControls() {
+  const cur = "{{ accent }}";
+  const box = document.getElementById("swatches");
+  ACCENTS.forEach(c => {
+    const b = document.createElement("button");
+    b.className = "swatch" + (c.toLowerCase() === cur.toLowerCase() ? " on" : "");
+    b.style.background = c;
+    b.title = c;
+    b.onclick = () => navWith({ accent: c });
+    box.appendChild(b);
+  });
+  const sel = document.getElementById("densitySel");
+  sel.value = DENSITY;
+  sel.addEventListener("change", () => navWith({ density: sel.value }));
+})();
+
+// ----- 模块显隐与排序 -----
+function applyLayout(layout) {
+  const container = document.querySelector(".resume-body .rs-page");
+  const secs = {};
+  [...container.querySelectorAll(":scope > .rs-sec")].forEach(el => secs[el.dataset.sec] = el);
+  layout.order.forEach(key => { if (secs[key]) container.appendChild(secs[key]); });
+  Object.values(secs).forEach(el => el.classList.add("rs-hide"));
+  layout.order.forEach(key => secs[key] && secs[key].classList.remove("rs-hide"));
+  (layout.hidden || []).forEach(key => secs[key] && secs[key].classList.add("rs-hide"));
+}
+
+async function loadAndApplyLayout() {
+  try { applyLayout(await api("/api/layout")); } catch (e) { /* 保持默认 */ }
+}
+
+async function openLayoutPanel() {
+  const layout = await api("/api/layout");
+  const rows = layout.order.map((key, i) => `
+    <div class="sec-row" data-key="${key}">
+      <input type="checkbox" ${layout.hidden.includes(key) ? "" : "checked"} data-vis>
+      <label>${SEC_LABELS[key] || key}</label>
+      <button class="btn small" data-mv="-1" ${i === 0 ? "disabled" : ""}>↑</button>
+      <button class="btn small" data-mv="1" ${i === layout.order.length - 1 ? "disabled" : ""}>↓</button>
+    </div>`).join("");
+  openModal("简历模块：显隐与排序",
+    `<p class="hint">勾选 = 在简历中显示；↑↓ 调整上下顺序。设置对所有模板生效，保存后立即应用。</p>${rows}`,
+    `<button class="btn" onclick="closeModal()">取消</button>
+     <button class="btn ok" onclick="saveLayout()">保存并应用</button>`);
+}
+
+async function saveLayout() {
+  const order = [], hidden = [];
+  document.querySelectorAll(".sec-row").forEach(row => {
+    const key = row.dataset.key;
+    order.push(key);
+    if (!row.querySelector("[data-vis]").checked) hidden.push(key);
+  });
+  const r = await api("/api/layout", { method: "PUT", body: { order, hidden } });
+  closeModal();
+  applyLayout(r);
+  toast("模块设置已保存");
+}
+
+// ----- 模板选择墙 -----
+function thumbHTML(accent) {
+  let lines = "";
+  for (let i = 0; i < 6; i++) lines += `<div class="th-line${i % 3 === 0 ? " accent" : ""}" style="width:${88 - i * 9}%"></div>`;
+  return `<div class="th-band"><span class="th-ava"></span><span class="th-name"></span></div>${lines}`;
+}
+
+async function openWall() {
+  const list = await api("/api/templates");
+  const cards = list.map(t => {
+    const meta = TMETA[t.name] || {};
+    const isBuiltin = !!t.builtin;
+    return `
+    <div class="tcard ${isBuiltin ? "" : "custom"}" style="--ta:${meta.accent || "#88909a"}" data-name="${esc(t.name)}">
+      <div class="thumb">${isBuiltin ? thumbHTML(meta.accent || "#88909a") : "自定义"}</div>
+      <div class="tcap">
+        <span>${esc(t.title)}</span>
+        ${isBuiltin && meta.tag ? `<span class="tag gray">${esc(meta.tag)}</span>` : ""}
+        ${isBuiltin ? "" : `<a class="del" data-del="${esc(t.name)}" onclick="event.stopPropagation()">删除</a>`}
+      </div>
+    </div>`;
+  }).join("");
+  openModal("选择简历模板", `<div class="twall">${cards}</div>
+    <details style="margin-top:10px;">
+      <summary class="hint">添加自定义模板（Jinja2 HTML）</summary>
+      <div class="form-group mt8"><label>模板名称</label><input type="text" id="tmplName" placeholder="my-style"></div>
+      <div class="form-group"><label>模板 HTML</label><textarea id="tmplHtml" style="min-height:170px;font-family:Consolas,monospace;font-size:12.5px;" placeholder="<div>…{{ '{{ profile.name }}' }}…</div>"></textarea>
+        <div class="hint mt8">可用变量：profile（含 name/phone/email/photo_path/skills 等）、education、papers、projects、awards、positions；每个区块请包一层 &lt;section class="rs-sec" data-sec="…"&gt; 以支持模块开关。基座样式 _base.css 会自动注入。</div>
+      </div>
+      <button class="btn small ok" onclick="saveTemplate()">保存模板</button>
+    </details>`);
+}
+
+document.addEventListener("click", async (e) => {
+  const del = e.target.closest("[data-del]");
+  if (del) {
+    e.preventDefault();
+    const name = del.getAttribute("data-del");
+    if (!confirm(`确定删除模板「${name}」吗？`)) return;
+    await api("/api/templates/" + encodeURIComponent(name), { method: "DELETE" });
+    toast("已删除");
+    openWall();
+    return;
+  }
+  const card = e.target.closest(".tcard[data-name]");
+  if (card && !e.target.closest("[data-del]")) {
+    navWith({ template: card.dataset.name, accent: null });  // 切模板时回到其默认主题色
+  }
+});
+
+async function saveTemplate() {
+  try {
+    await api("/api/templates", { method: "POST", body: { name: val("#tmplName"), html: val("#tmplHtml") } });
+    toast("模板已保存");
+    closeModal();
+    navWith({ template: val("#tmplName"), accent: null });
+  } catch (err) { toast(err.message, 5000); }
+}
+
+document.getElementById("btnTemplates").onclick = openWall;
+document.getElementById("btnLayout").onclick = openLayoutPanel;
+document.getElementById("userSel").addEventListener("change", async function () {
+  await api(`/api/users/${this.value}/switch`, { method: "POST" });
+  location.reload();
+});
+
+loadAndApplyLayout();
+</script>
+<div class="dev-credit">Developed by <b>Wolfentsz</b> · XG Resume Studio</div>
+</body>
+</html>

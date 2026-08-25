@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>初始化向导 · 滴鱼简历助手</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+         background:#f0f4f6; color:#24292f; min-height:100vh; display:flex; align-items:center; justify-content:center; }
+  .card { width:min(560px, 94vw); background:#fff; border-radius:16px; box-shadow:0 10px 40px rgba(15,23,42,.10); padding:30px 32px; }
+  .logo { display:flex; align-items:center; gap:10px; font-weight:800; font-size:19px; color:#0f766e; margin-bottom:4px; }
+  .logo .dot { width:26px; height:26px; border-radius:8px; background:#0f766e; color:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:13px; }
+  .sub { color:#667; font-size:13px; margin-bottom:20px; }
+  .steps { display:flex; gap:6px; margin-bottom:22px; }
+  .steps span { flex:1; height:5px; border-radius:99px; background:#e3e9ee; transition:.25s; }
+  .steps span.on { background:#0f766e; }
+  h2 { margin:0 0 6px; font-size:21px; }
+  .hint { color:#68737d; font-size:13.5px; line-height:1.75; }
+  .priv { background:#f0faf7; border:1px solid #cfeae2; border-radius:10px; padding:10px 12px; font-size:13px; color:#14665a; line-height:1.7; margin:14px 0; }
+  label { display:block; font-size:13px; font-weight:600; color:#456; margin:12px 0 5px; }
+  input[type=text], input[type=password], select { width:100%; padding:10px 11px; border:1px solid #d6dee4; border-radius:10px; font-size:14px; }
+  .row { display:flex; gap:10px; align-items:center; }
+  .row select { width:150px; }
+  button { cursor:pointer; border:none; border-radius:10px; padding:10px 18px; font-size:14px; font-weight:600; }
+  .primary { background:#0f766e; color:#fff; }
+  .ghost { background:#eef2f5; color:#345; }
+  .foot { display:flex; justify-content:space-between; margin-top:24px; }
+  .skip { font-size:13px; color:#789; align-self:center; cursor:pointer; background:none; padding:6px; }
+  .msg { font-size:13px; margin-top:8px; min-height:18px; }
+  .ok { color:#0e7a52; } .err { color:#b3413b; }
+  .chk { display:flex; gap:8px; align-items:center; font-size:14px; margin-top:14px; cursor:pointer; }
+  .avatar { display:flex; align-items:center; gap:14px; margin-top:6px; }
+  .ava { width:56px; height:56px; border-radius:50%; background:#e6f2ef; color:#0f766e; display:flex; align-items:center; justify-content:center; font-weight:800; overflow:hidden; }
+  .ava img { width:100%; height:100%; object-fit:cover; }
+  .hidden { display:none !important; }
+  a { color:#0f766e; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo"><span class="dot">RS</span>滴鱼简历助手 <span style="color:#99a;font-weight:500;font-size:13px;">XG Resume Studio</span></div>
+  <div class="sub">本地运行 · 数据只存在你自己的电脑里 &nbsp;|&nbsp; 软件开发者：<b>Wolfentsz</b></div>
+  {% if initialized %}<div class="priv" style="background:#fff7e8;border-color:#f0dcb0;color:#8a6d1f;">✏️ 你已完成过初始化：下面是当前配置（Key 留空表示不修改），改完点「完成」保存即可。</div>{% endif %}
+  <div class="steps" id="steps"><span class="on"></span><span></span><span></span></div>
+
+  <!-- 第 1 步：欢迎 -->
+  <div id="s1">
+    <h2>欢迎使用 👋</h2>
+    <p class="hint">这是一个完全运行在你本地的简历管理系统：<br>
+      上传证书 / 材料照片，自动识别「获奖情况」和「任职情况」；<br>
+      填写个人资料后，用四套场景模板一键产出简历。</p>
+    <div class="priv">🔒 隐私承诺：所有数据（资料、上传文件、数据库）仅保存在本目录下。
+       只有当你主动配置 AI 并使用 AI 功能时，相关文本才会发送到<b>你自己填写</b>的接口商。</div>
+    <p class="hint">接下来只需三步：起个名字 → （可选）配置 AI → 开始使用。</p>
+  </div>
+
+  <!-- 第 2 步：账户 -->
+  <div id="s2" class="hidden">
+    <h2>你的名字</h2>
+    <p class="hint">将作为默认账户名显示在右上角；以后可以随时改。</p>
+    <label>账户名称</label>
+    <input type="text" id="name" maxlength="20" value="{{ account_name }}" placeholder="如：小李">
+    <label>给 AI 助手「小点」一个头像（可跳过）</label>
+    <div class="avatar">
+      <span class="ava" id="avaPrev">{% if assistant_avatar %}<img src="{{ assistant_avatar }}">{% else %}🤖{% endif %}</span>
+      <button class="ghost" onclick="document.getElementById('ava').click()">选择图片</button>
+      <input type="file" id="ava" accept=".jpg,.jpeg,.png,.webp" hidden>
+      <span class="hint" id="avaTip"></span>
+    </div>
+  </div>
+
+  <!-- 第 3 步：AI 配置 -->
+  <div id="s3" class="hidden">
+    <h2>配置 AI（可选，强烈推荐）</h2>
+    <p class="hint">配置你自己的大模型 API 后解锁：「AI 整理」把扫描件文字变成规范条目、AI 助手「小点」帮你润色简历。<b>不配置也能正常使用</b>——手动录入与规则提取不受影响。</p>
+    <label>服务商预设</label>
+    <select id="preset">
+      <option value="">— 自定义 —</option>
+      <option value="deepseek">DeepSeek（国内，便宜）</option>
+      <option value="openai">OpenAI</option>
+      <option value="moonshot">Moonshot Kimi</option>
+      <option value="zhipu">智谱 GLM</option>
+      <option value="ollama">Ollama（本地模型，零成本）</option>
+    </select>
+    <label>接口地址</label>
+    <input type="text" id="base" value="{{ api_base }}" placeholder="https://api.deepseek.com/v1">
+    <label>API Key</label>
+    <input type="password" id="key" placeholder="{% if has_key %}已保存 · 留空表示不修改{% else %}sk-...{% endif %}">
+    <label>模型名称</label>
+    <input type="text" id="model" list="modelList" value="{{ ai_model }}" placeholder="deepseek-chat">
+    <datalist id="modelList"></datalist>
+    <div class="hint" style="margin-top:5px;">下拉可选该服务商的常用模型，也可直接手动输入任意型号。</div>
+    <div class="row" style="margin-top:12px;">
+      <button class="ghost" id="testBtn" onclick="testAi()">测试连接</button>
+      <span class="msg" id="tmsg"></span>
+    </div>
+    <p class="hint">测试最长约 8 秒。失败也没关系，仍可点「完成」进入，稍后在首页随时修改。</p>
+    <label class="chk"><input type="checkbox" id="demo"> 载入示例数据（虚构人物「李明」，用于先看看效果，随时可一键清除）</label>
+  </div>
+
+  <div class="foot">
+    <button class="skip" id="back">← 上一步</button>
+    <span>
+      <button class="skip" id="skipAll">{% if initialized %}返回首页{% else %}跳过向导{% endif %}</button>
+      <button class="primary" id="next">下一步 →</button>
+    </span>
+  </div>
+  <div class="msg err hidden" id="fatal"></div>
+</div>
+
+<script>
+let step = 1;
+const total = 3;
+const PRESETS = {
+  deepseek: { base: "https://api.deepseek.com/v1", models: ["deepseek-chat", "deepseek-reasoner"] },
+  openai:   { base: "https://api.openai.com/v1",   models: ["gpt-4o-mini", "gpt-4o"] },
+  moonshot: { base: "https://api.moonshot.cn/v1",  models: ["moonshot-v1-8k", "moonshot-v1-32k"] },
+  zhipu:    { base: "https://open.bigmodel.cn/api/paas/v4", models: ["glm-4-flash", "glm-4-plus"] },
+  ollama:   { base: "http://127.0.0.1:11434/v1",   models: [] },  // 取决于本地已拉取的模型，自由填写
+};
+function applyPreset(key) {
+  const p = PRESETS[key];
+  const base = document.getElementById("base");
+  const model = document.getElementById("model");
+  const dl = document.getElementById("modelList");
+  if (!p) { dl.innerHTML = ""; return; }
+  base.value = p.base;
+  dl.innerHTML = p.models.map(m => `<option value="${m}">`).join("");
+  if (p.models.length) model.value = p.models[0];
+}
+document.getElementById("preset").addEventListener("change", function () {
+  applyPreset(this.value);
+});
+// 载入已保存配置时，按接口地址反显对应预设
+(function matchPreset() {
+  const cur = (document.getElementById("base").value || "").replace(/\/$/, "");
+  for (const [k, p] of Object.entries(PRESETS)) {
+    if (cur && p.base.replace(/\/$/, "") === cur) { document.getElementById("preset").value = k; break; }
+  }
+})();
+
+function show(n) {
+  step = n;
+  for (let i = 1; i <= total; i++) document.getElementById("s" + i).classList.toggle("hidden", i !== n);
+  [...document.querySelectorAll("#steps span")].forEach((el, i) => el.classList.toggle("on", i < n));
+  document.getElementById("back").style.visibility = n === 1 ? "hidden" : "visible";
+  document.getElementById("next").textContent = n === total ? "完成 🎉" : "下一步 →";
+}
+
+async function api(path, body) {
+  const r = await fetch(path, { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.detail || d.error || r.statusText);
+  return d;
+}
+
+document.getElementById("ava").addEventListener("change", async function () {
+  if (!this.files.length) return;
+  const fd = new FormData();
+  fd.append("file", this.files[0]);
+  try {
+    const r = await fetch("/api/assistant/avatar", { method: "POST", body: fd });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || "失败");
+    document.getElementById("avaPrev").innerHTML = `<img src="${d.url}">`;
+    document.getElementById("avaTip").textContent = "已保存 ✓";
+  } catch (e) { document.getElementById("avaTip").textContent = e.message; }
+});
+
+async function testAi() {
+  const btn = document.getElementById("testBtn");
+  const m = document.getElementById("tmsg");
+  btn.disabled = true; btn.textContent = "测试中…";
+  m.className = "msg"; m.textContent = "连接中（最长约 8 秒）…";
+  try {
+    const r = await api("/api/ai/test", {
+      api_base: document.getElementById("base").value,
+      api_key: document.getElementById("key").value,
+      model: document.getElementById("model").value,
+    });
+    if (r.ok) { m.className = "msg ok"; m.textContent = "✓ 连接成功"; }
+    else { m.className = "msg err"; m.textContent = "✗ " + r.error; }
+  } catch (e) { m.className = "msg err"; m.textContent = "✗ " + e.message; }
+  btn.disabled = false; btn.textContent = "测试连接";
+}
+
+document.getElementById("back").onclick = () => show(Math.max(1, step - 1));
+document.getElementById("skipAll").onclick = () => api("/api/setup/finish", { skip_ai: true })
+  .then(() => location.href = "/")
+  .catch(e => fatal(e.message));
+
+document.getElementById("next").onclick = async () => {
+  if (step === 1) return show(2);
+  if (step === 2) return show(3);
+  const btn = document.getElementById("next");
+  btn.disabled = true; btn.textContent = "正在进入…";
+  try {
+    await api("/api/setup/finish", {
+      account_name: document.getElementById("name").value,
+      skip_ai: true,
+      load_demo: document.getElementById("demo").checked,
+    });
+    // 若填了 Key 再单独保存（跳过 checkbox 的场景）
+    const key = document.getElementById("key").value.trim();
+    if (key) {
+      await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ api_key: key,
+          api_base: document.getElementById("base").value,
+          model: document.getElementById("model").value }) });
+    }
+    location.href = "/";
+  } catch (e) {
+    btn.disabled = false; btn.textContent = "完成 🎉";
+    fatal(e.message);
+  }
+};
+
+function fatal(msg) {
+  const f = document.getElementById("fatal");
+  f.textContent = msg; f.classList.remove("hidden");
+}
+show(1);
+</script>
+</body>
+</html>

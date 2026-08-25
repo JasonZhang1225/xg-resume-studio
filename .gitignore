@@ -1,0 +1,23 @@
+# 用户运行时数据（含全部个人信息）—— 整体排除，绝不入库
+/data/
+
+# Python 环境与缓存
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# PyInstaller 打包产物
+build/
+dist/
+*.spec
+
+# 分享压缩包（构建产物，不入库）
+XG-Resume-Studio-share.zip
+
+# 日志与临时文件
+*.log
+.DS_Store
+Thumbs.db

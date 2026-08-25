@@ -1,0 +1,310 @@
+{% extends "base.html" %}
+{% block title %}获奖与任职 - 滴鱼简历助手{% endblock %}
+{% block content %}
+{% from "_icons.html" import icon %}
+
+<div class="card">
+  <div class="between">
+    <h2 style="margin:0;">{{ icon("award") }}获奖情况（{{ awards|length }}）</h2>
+    <button class="btn primary" onclick="openItemModal('award')">{{ icon("plus") }}添加获奖</button>
+  </div>
+  <p class="hint">每条获奖都可以附加证书/证明文件（jpg、png、pdf、docx 等）作为佐证。</p>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0;">
+    <input type="text" id="fq" placeholder="搜索名称/单位…" style="max-width:200px;">
+    <select id="fLevel" style="min-width:110px;"><option value="">全部级别</option></select>
+    <select id="fCat" style="min-width:110px;"><option value="">全部类别</option></select>
+    <select id="fYear" style="min-width:110px;"><option value="">全部年份</option></select>
+    <button class="btn small" onclick="resetAwardFilters()">重置</button>
+  </div>
+  {% if awards %}
+  <table class="data mt">
+    <thead><tr><th>奖项名称</th><th>时间</th><th>级别</th><th>类别</th><th>颁发单位</th><th>佐证</th><th>操作</th></tr></thead>
+    <tbody id="awardBody">
+    {% for a in awards %}
+      <tr data-level="{{ a.level }}" data-cat="{{ a.category }}" data-year="{{ (a.date or '')[:4] }}">
+        <td>{{ a.title }}</td>
+        <td class="muted">{{ a.date }}</td>
+        <td>{% if a.level %}<span class="tag">{{ a.level }}</span>{% endif %}</td>
+        <td class="muted">{{ a.category }}</td>
+        <td class="muted">{{ a.organizer }}</td>
+        <td class="muted">{% if attach_counts.get(("award", a.id), 0) %}<a href="javascript:void(0)" style="text-decoration:underline;" onclick="quickView('award', {{ a.id }})">{{ attach_counts.get(("award", a.id), 0) }} 份</a>{% else %}0 份{% endif %}</td>
+        <td class="row-actions">
+          <button class="btn small" onclick="openItemModal('award', {{ a.id }})">{{ icon("edit") }}编辑</button>
+          <button class="btn small danger" onclick="deleteItem('award', {{ a.id }})">{{ icon("trash") }}删除</button>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">还没有获奖记录，上传文件自动提取，或点右上角手动添加</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="between">
+    <h2 style="margin:0;">{{ icon("briefcase") }}任职情况（{{ positions|length }}）</h2>
+    <button class="btn primary" onclick="openItemModal('position')">{{ icon("plus") }}添加任职</button>
+  </div>
+  <p class="hint">每条任职也可以附加证明文件（聘书、公示截图等）。</p>
+  {% if positions %}
+  <table class="data mt">
+    <thead><tr><th>职务</th><th>组织/单位</th><th>起止时间</th><th>佐证</th><th>操作</th></tr></thead>
+    <tbody>
+    {% for p in positions %}
+      <tr>
+        <td>{{ p.title }}</td>
+        <td class="muted">{{ p.org }}</td>
+        <td class="muted">{{ p.start }} ~ {{ p.end }}</td>
+        <td class="muted">{% if attach_counts.get(("position", p.id), 0) %}<a href="javascript:void(0)" style="text-decoration:underline;" onclick="quickView('position', {{ p.id }})">{{ attach_counts.get(("position", p.id), 0) }} 份</a>{% else %}0 份{% endif %}</td>
+        <td class="row-actions">
+          <button class="btn small" onclick="openItemModal('position', {{ p.id }})">{{ icon("edit") }}编辑</button>
+          <button class="btn small danger" onclick="deleteItem('position', {{ p.id }})">{{ icon("trash") }}删除</button>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">还没有任职记录</div>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const AWARD_LEVELS = ["国家级", "省级", "市级", "校级", "院级"];
+const AWARD_CATS = ["学业", "竞赛", "荣誉", "资格证书", "其他"];
+const AWARD_FIELDS = [
+  ["title", "奖项名称", "text"],
+  ["date", "获奖时间", "date"],
+  ["level", "级别", "select", AWARD_LEVELS],
+  ["category", "类别", "select", AWARD_CATS],
+  ["organizer", "颁发单位", "text"],
+  ["description", "补充说明", "textarea"],
+];
+const POSITION_FIELDS = [
+  ["title", "职务名称", "text"],
+  ["org", "组织/单位", "text"],
+  ["start", "开始时间", "date"],
+  ["end", "结束时间", "date"],
+  ["ongoing", "状态", "check", "仍在任（结束后取消勾选并填写时间）"],
+  ["description", "主要工作", "textarea"],
+];
+
+function fieldHTML(f) {
+  const [key, label, type, ph] = f;
+  if (type === "textarea") {
+    return `<div class="form-group"><label>${label}</label><textarea id="f_${key}" placeholder="${ph || ""}"></textarea></div>`;
+  }
+  if (type === "check") {
+    return `<div class="form-group"><label>&nbsp;</label><label style="display:flex;align-items:center;gap:8px;font-weight:500;cursor:pointer;"><input type="checkbox" id="f_${key}"> ${ph || label}</label></div>`;
+  }
+  if (type === "select") {
+    const opts = (ph || []).map(o => `<option value="${o}">${o}</option>`).join("");
+    return `<div class="form-group"><label>${label}</label><select id="f_${key}"><option value="">— 请选择 —</option>${opts}</select></div>`;
+  }
+  const dp = type === "date" ? ` data-dpick` : "";
+  return `<div class="form-group"><label>${label}</label><input type="text" id="f_${key}"${dp} placeholder="${ph || ""}"></div>`;
+}
+
+function openItemModal(itemType, id) {
+  window._itemType = itemType;
+  window._itemId = id || null;
+  const fields = itemType === "award" ? AWARD_FIELDS : POSITION_FIELDS;
+  const attachHTML = `
+    <h3 style="margin:16px 0 8px;">佐证文件（${id ? "" : "保存后可添加"}）</h3>
+    <div id="attachArea">
+      <div class="empty" style="padding:12px;">${id ? "加载中…" : "先点「保存」创建条目，再回来添加佐证文件"}</div>
+    </div>
+    ${id ? `
+    <input type="file" id="attachInput" multiple hidden
+      accept=".jpg,.jpeg,.png,.bmp,.webp,.pdf,.docx,.doc,.xlsx,.xls,.zip">
+    <button class="btn small primary" onclick="document.getElementById('attachInput').click()">上传佐证文件</button>
+    <span class="hint"> 支持图片/PDF/Word/Excel</span>` : ""}`;
+  openModal(id ? "编辑" : "添加",
+    `<div class="form-grid">${fields.map(fieldHTML).join("")}</div>${attachHTML}`,
+    `<button class="btn" onclick="closeModal()">取消</button>
+     <button class="btn ok" onclick="saveItem()">保存</button>`);
+  makeDatePickers();
+  if (id) {
+    loadItem(itemType, id);
+    renderAttachments(itemType, id);
+  }
+}
+
+async function loadItem(itemType, id) {
+  const data = await api("/api/items");
+  const list = itemType === "award" ? data.awards : data.positions;
+  const it = list.find(x => x.id === id);
+  if (!it) return;
+  (itemType === "award" ? AWARD_FIELDS : POSITION_FIELDS).forEach(f => {
+    const el = document.getElementById("f_" + f[0]);
+    if (!el) return;
+    if (f[2] === "check") { el.checked = !!Number(it[f[0]] || 0); return; }
+    if (f[2] === "select") {
+      const v = it[f[0]] ?? "";
+      if (v && ![...el.options].some(o => o.value === v)) el.add(new Option(v, v));
+      el.value = v;
+      return;
+    }
+    el.value = it[f[0]] ?? "";
+    if (f[0] === "end") el.disabled = !!Number(it.ongoing || 0);
+  });
+  refreshDatePickers();
+  const endInput = document.getElementById("f_end");
+  const ongoingBox = document.getElementById("f_ongoing");
+  if (endInput && ongoingBox) {
+    ongoingBox.addEventListener("change", () => {
+      endInput.disabled = ongoingBox.checked;
+      if (ongoingBox.checked) endInput.value = "";
+      endInput._dpSync && endInput._dpSync();
+    });
+  }
+}
+
+async function saveItem() {
+  const itemType = window._itemType;
+  const fields = itemType === "award" ? AWARD_FIELDS : POSITION_FIELDS;
+  const body = { item_type: itemType };
+  fields.forEach(f => {
+    if (f[2] === "check") {
+      body[f[0]] = document.getElementById("f_" + f[0])?.checked ? 1 : 0;
+    } else {
+      body[f[0]] = val("#f_" + f[0]);
+    }
+  });
+  // 未来日期校验：防止 2029 这类手滑年份（图片/OCR 识别错也常出这种错）
+  const yNow = new Date().getFullYear();
+  for (const f of fields) {
+    if (f[2] !== "date") continue;
+    const m = (body[f[0]] || "").match(/(20\d{2})/);
+    if (m && parseInt(m[1], 10) > yNow + 1 &&
+        !confirm(`「${f[1]}」填的时间是 ${m[1]} 年，在未来。\n若为识别/输入错误请点「取消」修改；确信无误可点「确定」保存。`)) return;
+  }
+  if (body.ongoing) body.end = "";
+  if (window._itemId) {
+    await api(`/api/items/${itemType}/${window._itemId}`, { method: "PUT", body });
+    closeModal();
+    toast("已保存");
+    location.reload();
+  } else {
+    const r = await api("/api/items", { method: "POST", body });
+    closeModal();
+    toast("已创建，可添加佐证文件");
+    openItemModal(itemType, r.id);
+  }
+}
+
+async function deleteItem(itemType, id) {
+  if (!confirm("确定删除这条记录吗？（佐证文件也会一并删除）")) return;
+  await api(`/api/items/${itemType}/${id}`, { method: "DELETE" });
+  toast("已删除");
+  location.reload();
+}
+
+async function renderAttachments(itemType, id) {
+  const area = document.getElementById("attachArea");
+  try {
+    const list = await api(`/api/attachments?item_type=${itemType}&item_id=${id}`);
+    if (!list.length) {
+      area.innerHTML = '<div class="empty" style="padding:12px;">还没有佐证文件</div>';
+      return;
+    }
+    area.innerHTML = list.map(f => {
+      const isImg = /\.(jpg|jpeg|png|bmp|webp)$/i.test(f.filename);
+      return `<div class="cand" style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin-bottom:6px;">
+        ${isImg ? `<img src="${esc(f.url)}" style="width:44px;height:44px;object-fit:cover;border-radius:8px;border:1px solid var(--border);">` : `<span style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:10px;background:var(--primary-soft);color:var(--primary-deep);"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg></span>`}
+        <span style="flex:1;word-break:break-all;">${esc(f.filename)}</span>
+        <a class="btn small" href="${esc(f.url)}" target="_blank">查看</a>
+        <button class="btn small danger" onclick="deleteAttachment(${f.id})">删除</button>
+      </div>`;
+    }).join("");
+  } catch (err) { area.innerHTML = `<div class="empty">加载失败：${esc(err.message)}</div>`; }
+}
+
+document.addEventListener("change", async function (e) {
+  if (e.target && e.target.id === "attachInput") {
+    const files = e.target.files;
+    if (!files.length) return;
+    // 逐个顺序上传，全部完成后再统一刷新列表，避免并发导致刷新时机错乱
+    for (const file of files) {
+      const fd = new FormData();
+      fd.append("file", file);
+      try {
+        await api(`/api/items/${window._itemType}/${window._itemId}/attachments`, { method: "POST", body: fd });
+      } catch (err) { toast(`${file.name} 上传失败：${err.message}`, 5000); }
+    }
+    toast("佐证已上传");
+    renderAttachments(window._itemType, window._itemId);
+    e.target.value = "";
+  }
+});
+
+async function deleteAttachment(attId) {
+  if (!confirm("确定删除这份佐证文件吗？")) return;
+  await api("/api/attachments/" + attId, { method: "DELETE" });
+  toast("已删除");
+  renderAttachments(window._itemType, window._itemId);
+}
+
+/* ---- 佐证快览：列表里点「N 份」直接弹窗看缩略图 ---- */
+async function quickView(itemType, id) {
+  try {
+    const list = await api(`/api/attachments?item_type=${itemType}&item_id=${id}`);
+    const html = list.length
+      ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;">` +
+        list.map(f => {
+          const isImg = /\.(jpg|jpeg|png|bmp|webp)$/i.test(f.filename);
+          return `<div class="cand" style="padding:8px;text-align:center;">
+            ${isImg
+              ? `<img src="${esc(f.url)}" style="width:100%;height:110px;object-fit:cover;border-radius:8px;border:1px solid var(--border);">`
+              : `<div style="height:110px;display:flex;align-items:center;justify-content:center;background:var(--primary-soft,#eef7f4);border-radius:8px;font-size:30px;">📄</div>`}
+            <div class="hint" style="margin-top:6px;word-break:break-all;">${esc(f.filename)}</div>
+            <a class="btn small" href="${esc(f.url)}" target="_blank" style="margin-top:6px;">查看原图</a>
+          </div>`;
+        }).join("") + `</div>`
+      : '<div class="empty">没有佐证文件</div>';
+    openModal("佐证文件预览", html, `<button class="btn primary" onclick="closeModal()">关闭</button>`);
+  } catch (err) { toast(err.message, 5000); }
+}
+
+/* ---- 获奖筛选：关键字 + 级别 + 类别 + 年份 ---- */
+function initAwardFilters() {
+  const body = document.getElementById("awardBody");
+  if (!body) return;
+  const lv = document.getElementById("fLevel"), ct = document.getElementById("fCat"), yr = document.getElementById("fYear");
+  const levels = new Set(), cats = new Set(), years = new Set();
+  body.querySelectorAll("tr").forEach(tr => {
+    tr.dataset.level && levels.add(tr.dataset.level);
+    tr.dataset.cat && cats.add(tr.dataset.cat);
+    /^\d{4}$/.test(tr.dataset.year || "") && years.add(tr.dataset.year);
+  });
+  [...levels].sort().forEach(v => lv.add(new Option(v, v)));
+  [...cats].sort().forEach(v => ct.add(new Option(v, v)));
+  [...years].sort((a, b) => b - a).forEach(v => yr.add(new Option(v + "年", v)));
+  ["#fq", "#fLevel", "#fCat", "#fYear"].forEach(s => {
+    document.querySelector(s).addEventListener("input", applyAwardFilters);
+    document.querySelector(s).addEventListener("change", applyAwardFilters);
+  });
+}
+function applyAwardFilters() {
+  const body = document.getElementById("awardBody");
+  if (!body) return;
+  const q = val("#fq").toLowerCase(), lv = val("#fLevel"), ct = val("#fCat"), yr = val("#fYear");
+  body.querySelectorAll("tr").forEach(tr => {
+    const ok = (!q || tr.textContent.toLowerCase().includes(q)) &&
+      (!lv || tr.dataset.level === lv) &&
+      (!ct || tr.dataset.cat === ct) &&
+      (!yr || tr.dataset.year === yr);
+    tr.style.display = ok ? "" : "none";
+  });
+}
+function resetAwardFilters() {
+  ["#fq", "#fLevel", "#fCat", "#fYear"].forEach(s => setVal(s, ""));
+  applyAwardFilters();
+}
+initAwardFilters();
+</script>
+{% endblock %}

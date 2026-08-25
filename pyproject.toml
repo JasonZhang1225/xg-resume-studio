@@ -1,0 +1,11 @@
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+# 宽松策略：只拦截语法级错误与未定义名称，风格类规则暂不启用
+select = ["E9", "F63", "F7", "F82", "F401", "F841"]

@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>证书直传 - {{ user_name }}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f0f4f6; color: #222; }
+  header { background: #0f766e; color: #fff; padding: 14px 16px; }
+  header .n { font-size: 18px; font-weight: 700; }
+  header .s { font-size: 12.5px; opacity: .85; margin-top: 2px; }
+  main { padding: 14px; max-width: 560px; margin: 0 auto; }
+  .modes { display: flex; background: #e2ebe9; border-radius: 12px; padding: 4px; gap: 4px; margin-bottom: 12px; }
+  .modes button { flex: 1; border: none; background: transparent; padding: 9px 6px; border-radius: 9px; font-size: 14px; font-weight: 600; color: #567; cursor: pointer; }
+  .modes button.on { background: #fff; color: #0f766e; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .drop { background: #fff; border: 2px dashed #9fc9c3; border-radius: 14px; padding: 26px 14px; text-align: center; cursor: pointer; }
+  .drop:active { background: #eef7f5; }
+  .drop .big { font-size: 34px; line-height: 1; }
+  .drop .t { font-weight: 700; margin-top: 8px; }
+  .drop .h { font-size: 12.5px; color: #667; margin-top: 4px; }
+  input[type=file] { display: none; }
+  .status { font-size: 13px; color: #456; margin-top: 10px; min-height: 18px; }
+  .bar { height: 8px; background: #dfe7ec; border-radius: 999px; overflow: hidden; margin-top: 6px; display: none; }
+  .bar i { display: block; height: 100%; width: 0; background: #0f766e; transition: width .15s; }
+  .cand { background: #fff; border-radius: 12px; padding: 12px; margin-top: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.05); }
+  .cand h4 { margin: 0 0 8px; font-size: 14px; color: #0f766e; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .row label { flex: none; width: 52px; font-size: 12.5px; color: #567; }
+  .row input, select { flex: 1; min-width: 0; padding: 8px 9px; border: 1px solid #d6dee4; border-radius: 9px; font-size: 14px; }
+  .ck { display: flex; align-items: center; gap: 6px; font-size: 13.5px; margin-bottom: 8px; }
+  button.ok { width: 100%; margin-top: 4px; padding: 11px; border: none; border-radius: 10px; background: #0f766e; color: #fff; font-size: 15px; font-weight: 600; }
+  button.ok.gray { background: #8ba3a0; }
+  .done { background: #e8f6f1; border: 1px solid #bfe5da; color: #14665a; border-radius: 12px; padding: 12px; text-align: center; font-size: 14px; }
+  .thumb { width: 100%; max-height: 180px; object-fit: contain; border-radius: 9px; border: 1px solid #e2eaee; background: #fafcfb; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="n">{{ user_name }} 的证书直传</div>
+  <div class="s">拍下的证书自动识别归档，或确认后导入电脑端的获奖资料库</div>
+</header>
+<main>
+  <div class="modes">
+    <button id="modeCert" class="on" onclick="setMode('cert')">📷 存入证书归档</button>
+    <button id="modeAward" onclick="setMode('award')">🏆 导入获奖条目</button>
+  </div>
+  <div class="drop" onclick="document.getElementById('pick').click()">
+    <div class="big">📷</div>
+    <div class="t">拍照或选择图片</div>
+    <div class="h" id="dropHint">拍完即自动识别归档，可连续拍摄多张，稍后逐份核对</div>
+  </div>
+  <input type="file" id="pick" accept="image/*" capture="environment" multiple>
+  <div class="status" id="st"></div>
+  <div class="bar" id="bar"><i id="fill"></i></div>
+  <div id="queue"></div>
+</main>
+<script>
+const TOKEN = {{ token | tojson }};
+let queue = [];
+let mode = "cert";
+
+function setMode(m) {
+  mode = m;
+  document.getElementById("modeCert").classList.toggle("on", m === "cert");
+  document.getElementById("modeAward").classList.toggle("on", m === "award");
+  document.getElementById("dropHint").textContent = m === "cert"
+    ? "拍完即自动识别归档，可连续拍摄多张，稍后逐份核对"
+    : "拍下的获奖证书 / 任命文件，确认后直接进入电脑端的资料库";
+}
+
+function hdr() { return { "X-Device-Token": TOKEN }; }
+
+async function api(path, opt = {}) {
+  const o = { headers: hdr(), ...opt };
+  if (o.body && typeof o.body === "object") { o.headers["Content-Type"] = "application/json"; o.body = JSON.stringify(o.body); }
+  const res = await fetch(path, o);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || res.statusText);
+  return data;
+}
+
+document.getElementById("pick").addEventListener("change", async function () {
+  const files = [...this.files];
+  this.value = "";
+  for (const f of files) await uploadOne(f);
+});
+
+async function uploadOne(file) {
+  const st = document.getElementById("st");
+  const bar = document.getElementById("bar"), fill = document.getElementById("fill");
+  st.textContent = `正在上传识别：${file.name || "拍照图片"} …`;
+  bar.style.display = "block"; fill.style.width = "0%";
+  const fd = new FormData();
+  fd.append("file", file, file.name || "camera.jpg");
+  const url = mode === "cert" ? "/api/certs/upload" : "/api/upload";
+  try {
+    const res = await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", url);
+      xhr.setRequestHeader("X-Device-Token", TOKEN);
+      xhr.upload.onprogress = e => { if (e.lengthComputable) fill.style.width = (e.loaded / e.total * 100) + "%"; };
+      xhr.onload = () => {
+        let d = {}; try { d = JSON.parse(xhr.responseText); } catch {}
+        if (xhr.status >= 200 && xhr.status < 300) resolve(d); else reject(new Error(d.detail || "上传失败"));
+      };
+      xhr.onerror = () => reject(new Error("网络错误"));
+      xhr.send(fd);
+    });
+    queue.push({ mode, res });
+    renderQueue();
+    st.textContent = mode === "cert"
+      ? `✅ 已自动归档《${res.title || "未命名证书"}》，可在下方核对修改`
+      : `已识别 ${file.name || "图片"}，请核对下方信息后导入`;
+    setTimeout(() => { bar.style.display = "none"; }, 400);
+  } catch (err) {
+    st.textContent = "失败：" + err.message;
+    bar.style.display = "none";
+  }
+}
+
+function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+
+const CATS = ["奖学金", "荣誉称号", "竞赛获奖", "资格证书", "聘书任职", "结业培训", "其他"];
+
+function renderQueue() {
+  document.getElementById("queue").innerHTML = queue.map((q, i) => {
+    if (q.mode === "cert") return renderCertCard(q.res, i);
+    return renderAwardCard(q.res, i);
+  }).join("");
+}
+
+function renderCertCard(r, i) {
+  const catOpts = CATS.map(c => `<option value="${c}" ${c === (r.category || "其他") ? "selected" : ""}>${c}</option>`).join("");
+  return `
+    <div class="cand" data-i="${i}">
+      ${r.thumb_url ? `<img class="thumb" src="${esc(r.thumb_url)}">` : ""}
+      <h4>🗂 已归档：《${esc(r.title)}》</h4>
+      <div class="done" style="margin-bottom:10px;">系统已自动识别并按年份归类，改完点保存即可</div>
+      <div class="row"><label>名称</label><input data-cf="${i}:title" value="${esc(r.title)}"></div>
+      <div class="row"><label>分类</label><select data-cf="${i}:category">${catOpts}</select></div>
+      <div class="row"><label>时间</label><input data-cf="${i}:date" value="${esc(r.date)}" placeholder="2024年6月"></div>
+      <div class="row"><label>级别</label><input data-cf="${i}:level" value="${esc(r.level)}" placeholder="国家级/省级/校级"></div>
+      <div class="row"><label>单位</label><input data-cf="${i}:issuer" value="${esc(r.issuer)}" placeholder="颁发单位（可选）"></div>
+      <button class="ok" onclick="saveCert(${i})">保存修改</button>
+      <button class="ok gray" onclick="deleteCert(${i})">删除这条归档</button>
+    </div>`;
+}
+
+function renderAwardCard(r, i) {
+  return `
+    <div class="cand" data-i="${i}">
+      <h4>📄 ${esc(r.filename)}（${r.awards.length} 获奖 / ${r.positions.length} 任职）</h4>
+      ${(r.awards || []).map((a, j) => `
+        <div class="aw">
+          <label class="ck"><input type="checkbox" checked data-k="${i}:a:${j}"> 导入这条获奖</label>
+          <div class="row"><label>名称</label><input data-f="${i}:a:${j}:title" value="${esc(a.title)}"></div>
+          <div class="row"><label>时间</label><input data-f="${i}:a:${j}:date" value="${esc(a.date)}" placeholder="2024年6月"></div>
+          <div class="row"><label>级别</label><input data-f="${i}:a:${j}:level" value="${esc(a.level)}" placeholder="国家级/省级/校级"></div>
+        </div>`).join("")}
+      ${(r.positions || []).map((p, j) => `
+        <div class="pw">
+          <label class="ck"><input type="checkbox" checked data-k="${i}:p:${j}"> 导入这条任职</label>
+          <div class="row"><label>职务</label><input data-f="${i}:p:${j}:title" value="${esc(p.title)}"></div>
+          <div class="row"><label>开始</label><input data-f="${i}:p:${j}:start" value="${esc(p.start)}" placeholder="2023年9月"></div>
+        </div>`).join("")}
+      ${(!r.awards.length && !r.positions.length) ? `<div class="done">没有识别出条目（文字太少可回电脑端用 AI 整理）</div>` : ""}
+      <button class="ok" onclick="importOne(${i})">导入这份的勾选项</button>
+    </div>`;
+}
+
+function val(sel) { return document.querySelector(`[${sel}]`)?.value.trim() ?? ""; }
+
+async function saveCert(i) {
+  const body = {
+    title: val(`data-cf="${i}:title"`),
+    category: val(`data-cf="${i}:category"`),
+    date: val(`data-cf="${i}:date"`),
+    level: val(`data-cf="${i}:level"`),
+    issuer: val(`data-cf="${i}:issuer"`),
+  };
+  if (!body.title) { alert("证书名称不能为空"); return; }
+  try {
+    await api(`/api/certs/${queue[i].res.id}`, { method: "PUT", body });
+    Object.assign(queue[i].res, body);
+    renderQueue();
+    document.getElementById("st").textContent = `✅ 已更新《${body.title}》`;
+  } catch (err) { alert("保存失败：" + err.message); }
+}
+
+async function deleteCert(i) {
+  if (!confirm("删除这条归档？图片也会一并删除。")) return;
+  try {
+    await api(`/api/certs/${queue[i].res.id}`, { method: "DELETE" });
+    queue.splice(i, 1);
+    renderQueue();
+    document.getElementById("st").textContent = "已删除该归档";
+  } catch (err) { alert("删除失败：" + err.message); }
+}
+
+function cval(sel) { return document.querySelector(`[${sel}]`)?.value.trim() ?? ""; }
+function ck(i, k) { const el = document.querySelector(`[data-k="${i}:${k}"]`); return el ? el.checked : false; }
+
+async function importOne(i) {
+  const awards = [], positions = [];
+  (queue[i].res.awards || []).forEach((_, j) => {
+    if (!ck(i, "a:" + j)) return;
+    const t = cval(`data-f="${i}:a:${j}:title"`);
+    if (!t) return;
+    awards.push({ title: t, date: cval(`data-f="${i}:a:${j}:date"`), level: cval(`data-f="${i}:a:${j}:level"`),
+                  category: "", organizer: "", source_file: queue[i].res.filename });
+  });
+  (queue[i].res.positions || []).forEach((_, j) => {
+    if (!ck(i, "p:" + j)) return;
+    const t = cval(`data-f="${i}:p:${j}:title"`);
+    if (!t) return;
+    positions.push({ title: t, org: "", start: cval(`data-f="${i}:p:${j}:start"`), end: "",
+                     source_file: queue[i].res.filename });
+  });
+  if (!awards.length && !positions.length) { alert("请至少勾选一条有效条目"); return; }
+  try {
+    const r = await api("/api/items/batch", { method: "POST", body: { awards, positions } });
+    queue.splice(i, 1);
+    renderQueue();
+    const tip = document.getElementById("st");
+    tip.textContent = `✅ 已导入 ${r.count} 条到「{{ user_name }}」账户`;
+  } catch (err) { alert("导入失败：" + err.message); }
+}
+async function unpair() {
+  if (!confirm("解除本设备配对？（之后需重新输入配对码）")) return;
+  await fetch("/api/auth/logout", { method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scope: "pair" }) });
+  location.href = "/pair";
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,84 @@
+name: Build Windows EXE
+
+# 触发方式：
+#   1. 推送 v* 标签（如 v1.0.0）→ 构建并发布 Release
+#   2. 手动在 Actions 页面点 Run workflow → 仅构建出产物供测试
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Build EXE
+        run: >
+          pyinstaller --noconfirm --clean --name 滴鱼简历助手 launcher.py
+          --add-data "templates;templates"
+          --add-data "static;static"
+          --add-data "resume_templates;resume_templates"
+          --collect-all rapidocr_onnxruntime
+          --collect-all onnxruntime
+          --collect-all pypdfium2
+          --exclude-module pywebview
+          --exclude-module pytest
+          --exclude-module ruff
+
+      - name: Smoke test (server starts)
+        run: |
+          Start-Process -FilePath ".\dist\滴鱼简历助手\滴鱼简历助手.exe" -PassThru | Out-Null
+          Start-Sleep -Seconds 25
+          $ok = $false
+          foreach ($p in 8000..8010) {
+            try {
+              $r = Invoke-WebRequest -Uri "http://127.0.0.1:$p/" -UseBasicParsing -TimeoutSec 5
+              if ($r.StatusCode -eq 200) { $ok = $true; break }
+            } catch { }
+          }
+          if (-not $ok) { throw "EXE smoke test failed: no HTTP 200 on 8000~8010" }
+          Write-Host "Smoke test passed."
+
+      - name: Clean test data
+        run: Remove-Item -Recurse -Force "dist/滴鱼简历助手/data" -ErrorAction SilentlyContinue
+
+      - name: Upload artifact (for testing)
+        uses: actions/upload-artifact@v4
+        with:
+          name: XG-Resume-Studio-portable
+          path: dist/滴鱼简历助手/
+          retention-days: 14
+
+      - name: Release (only on v* tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist/滴鱼简历助手" -DestinationPath "XG-Resume-Studio-${{ github.ref_name }}-win64.zip"
+          $body = @"
+          ## 滴鱼简历助手 XG Resume Studio ${{ github.ref_name }}
+
+          - 下载下方 **XG-Resume-Studio-*-win64.zip**，解压后双击「滴鱼简历助手.exe」即可使用
+          - 免安装、离线可用；你的全部数据保存在程序旁的 data 文件夹内
+          - 首次启动如遇 SmartScreen 提示，点「更多信息 → 仍要运行」
+          "@
+          $body | Out-File -FilePath release_body.md -Encoding utf8
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: XG-Resume-Studio-*-win64.zip
+          body_path: release_body.md

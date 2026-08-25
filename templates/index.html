@@ -1,0 +1,473 @@
+{% extends "base.html" %}
+{% block title %}首页 - 滴鱼简历助手{% endblock %}
+{% block content %}
+{% from "_icons.html" import icon %}
+
+<div class="kpis">
+  <a class="kpi c-teal" href="/items">
+    <span class="kpi-ic">{{ icon("award") }}</span>
+    <div><div class="kpi-num">{{ award_count }}</div><div class="kpi-label">获奖情况</div></div>
+  </a>
+  <a class="kpi c-sky" href="/items">
+    <span class="kpi-ic">{{ icon("briefcase") }}</span>
+    <div><div class="kpi-num">{{ position_count }}</div><div class="kpi-label">任职经历</div></div>
+  </a>
+  <a class="kpi c-amber" href="/certs">
+    <span class="kpi-ic">{{ icon("image") }}</span>
+    <div><div class="kpi-num">{{ cert_count }}</div><div class="kpi-label">归档证书</div></div>
+  </a>
+  <a class="kpi c-lav" href="/">
+    <span class="kpi-ic">{{ icon("file") }}</span>
+    <div><div class="kpi-num">{{ files|length }}</div><div class="kpi-label">上传材料</div></div>
+  </a>
+</div>
+
+<div class="card">
+  <h2>{{ icon("upload") }}上传材料</h2>
+  <p class="hint">支持 jpg / png / bmp / webp / pdf / docx。上传后系统会自动读取内容并提取获奖与任职信息，确认后即可入库。</p>
+  <div class="dropzone" id="dropzone">
+    <div class="dz-icon">{{ icon("upload") }}</div>
+    <div style="font-weight:600;margin-top:4px;">点击选择或拖拽文件到这里</div>
+    <div class="hint" style="margin-top:4px;">可以一次选择多个文件（会逐个弹出确认）</div>
+  </div>
+  <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.bmp,.webp,.pdf,.docx" multiple hidden>
+  <div id="uploadStatus" class="hint mt8"></div>
+</div>
+
+<div class="card">
+  <div class="between">
+    <h2 style="margin:0;">{{ icon("upload") }}手机扫码直传</h2>
+    <span class="tag gray">传入账户：{{ cur_user.name }}</span>
+  </div>
+  <p class="hint">手机和电脑连同一个 Wi-Fi，用相机扫码，把拍下的证书直接传进当前账户。</p>
+  <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
+    <div id="qrImg" style="width:136px;height:136px;background:#f0f3f6;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#8899a5;font-size:12.5px;text-align:center;line-height:1.7;padding:8px;">加载中…</div>
+    <div style="flex:1;min-width:220px;">
+      <div class="hint" id="qrTip">正在获取局域网地址…</div>
+      <div class="hint" id="pairRow" style="margin-top:6px;">配对码：<b id="pairCode" style="font-size:17px;letter-spacing:4px;color:#0f766e;">——</b>（手机首次打开页面时输入）</div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+        <a class="btn small" id="qrLink" target="_blank" href="#">打开直传页</a>
+        <button class="btn small" onclick="rotateToken()">重置二维码</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="between">
+    <h2 style="margin:0;">{{ icon("file-text") }}已上传的文件</h2>
+  </div>
+  {% if files %}
+  <table class="data mt">
+    <thead><tr><th>文件名</th><th>类型</th><th>状态</th><th>上传时间</th><th>操作</th></tr></thead>
+    <tbody>
+    {% for f in files %}
+      <tr data-file-id="{{ f.id }}">
+        <td>{{ f.filename }}</td>
+        <td><span class="tag gray">{{ f.file_type }}</span></td>
+        <td>{{ "已解析" if f.raw_text.strip() else "未识别出文字" }}</td>
+        <td class="muted">{{ f.created_at }}</td>
+        <td class="row-actions">
+          <button class="btn small" onclick="viewRaw({{ f.id }})">{{ icon("eye") }}原文</button>
+          <button class="btn small soft" onclick="aiExtract({{ f.id }})">{{ icon("sparkles") }}AI 整理</button>
+          <button class="btn small danger" onclick="deleteFile({{ f.id }})">{{ icon("trash") }}删除</button>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">还没有上传过文件</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="between">
+    <h2 style="margin:0;">{{ icon("settings") }}AI 智能整理（可选）</h2>
+    <span class="tag amber">配置你自己的大模型 API，解锁 AI 整理与小点助手</span>
+  </div>
+  <div class="form-grid mt8">
+    <div class="form-group">
+      <label>服务商预设</label>
+      <select id="aiPreset" onchange="applyPreset()">
+        <option value="">— 自定义 —</option>
+        <option value="deepseek">DeepSeek（国内，便宜）</option>
+        <option value="openai">OpenAI</option>
+        <option value="moonshot">Moonshot Kimi</option>
+        <option value="zhipu">智谱 GLM</option>
+        <option value="ollama">Ollama（本地模型）</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>接口地址（兼容 OpenAI）</label>
+      <input type="text" id="aiBase" placeholder="https://api.deepseek.com/v1">
+    </div>
+    <div class="form-group">
+      <label>API Key</label>
+      <input type="password" id="aiKey" placeholder="sk-...">
+    </div>
+    <div class="form-group">
+      <label>模型名称</label>
+      <input type="text" id="aiModel" list="aiModelList" placeholder="deepseek-chat">
+      <datalist id="aiModelList"></datalist>
+    </div>
+  </div>
+  <button class="btn primary" onclick="saveSettings()">{{ icon("check") }}保存设置</button>
+  <button class="btn" onclick="testAi()">测试连接</button>
+  <span class="msg hint" id="aiTestMsg" style="margin-left:10px;"></span>
+  <p class="hint mt8">没有 Key 也能用规则提取与全部手动功能；填了 Key 后每个文件可点「AI 整理」，小点也会上线。
+     已保存的 Key 只显示为掩码，直接保存不会改动它。
+     ⚠️ 启用后，使用 AI 功能时相关文本会发送到<b>你填写的接口商</b>。</p>
+</div>
+
+<div class="card">
+  <div class="between">
+    <h2 style="margin:0;">{{ icon("star") }}示例数据</h2>
+    <span class="tag gray">虚构人物「李明」</span>
+  </div>
+  <p class="hint">想先看看简历模板的效果？载入一份虚构示例资料即可预览四套模板；
+     「清除」会清空当前账户的全部简历数据（保留账户名），请谨慎操作。</p>
+  <button class="btn" onclick="demoLoad()">载入示例数据</button>
+  <button class="btn danger" onclick="demoClear()">清除当前账户数据</button>
+</div>
+
+<div class="card">
+  <div class="between">
+    <h2 style="margin:0;">{{ icon("settings") }}数据备份与恢复</h2>
+    <span class="tag gray">每次启动自动备份 · 保留最近 20 份</span>
+  </div>
+  <p class="hint">误删或改错数据时，可从下方任一快照一键恢复；恢复前系统会先把当前状态再自动备份一次，放心操作。</p>
+  <div id="backupList" class="hint">加载中…</div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const dropzone = document.getElementById("dropzone");
+const fileInput = document.getElementById("fileInput");
+dropzone.addEventListener("click", () => fileInput.click());
+dropzone.addEventListener("dragover", e => { e.preventDefault(); dropzone.classList.add("drag"); });
+dropzone.addEventListener("dragleave", () => dropzone.classList.remove("drag"));
+dropzone.addEventListener("drop", e => {
+  e.preventDefault(); dropzone.classList.remove("drag");
+  handleFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener("change", () => { handleFiles(fileInput.files); fileInput.value = ""; });
+
+// 多文件上传时结果排队：解析完全部文件后逐个弹窗确认，避免弹窗互相覆盖
+let uploadQueue = [];
+
+function renderUploadStatus(html) {
+  document.getElementById("uploadStatus").innerHTML = html;
+}
+
+async function handleFiles(files) {
+  const arr = [...files].filter(Boolean);
+  if (!arr.length) return;
+  uploadQueue = [];
+  const errors = [];
+  const cancelled = new Set();
+  for (let i = 0; i < arr.length; i++) {
+    const file = arr[i];
+    renderUploadStatus(`
+      <div class="up-now">
+        <span class="up-name" title="${esc(file.name)}">${esc(file.name)}${arr.length > 1 ? `（${i + 1}/${arr.length}）` : ""}</span>
+        <div class="up-bar"><div class="up-fill" style="width:0%"></div></div>
+        <span class="up-pct">0%</span>
+        <button class="btn small danger" data-cancel>取消</button>
+      </div>`);
+    const row = document.querySelector(".up-now");
+    const fill = row.querySelector(".up-fill");
+    const pct = row.querySelector(".up-pct");
+    let req = null;
+    row.querySelector("[data-cancel]").onclick = () => { if (req) req.abort(); };
+    req = apiUpload("/api/upload", file, (frac) => {
+      fill.style.width = (frac * 100).toFixed(1) + "%";
+      pct.textContent = Math.round(frac * 100) + "%";
+      if (frac >= 1) pct.textContent = "识别中…";
+    });
+    try {
+      uploadQueue.push(await req);
+    } catch (err) {
+      if (err.message === "__aborted__") {
+        cancelled.add(file.name);
+      } else {
+        errors.push(`${file.name}：${err.message}`);
+      }
+    }
+  }
+  const skippedCancel = cancelled.size ? `已取消 ${cancelled.size} 个。` : "";
+  if (errors.length) toast(errors.join("；"), 6000);
+  renderUploadStatus(errors.length || cancelled.size
+    ? `${skippedCancel}处理完成，${errors.length} 个失败（详见提示）。`
+    : "处理完成。");
+  advanceQueue();
+}
+
+// Ctrl+V 直接粘贴剪贴板里的证书/通知截图
+document.addEventListener("paste", (e) => {
+  if (!e.clipboardData || !e.clipboardData.items) return;
+  const imgs = [...e.clipboardData.items]
+    .filter(it => it.kind === "file" && it.type.startsWith("image/"))
+    .map(it => it.getAsFile())
+    .filter(Boolean);
+  if (!imgs.length) return;
+  e.preventDefault();
+  toast(`检测到 ${imgs.length} 张粘贴图片，开始识别…`);
+  const named = imgs.map((f, i) => new File([f], f.name || `剪贴板图片_${i + 1}.png`, { type: f.type || "image/png" }));
+  handleFiles(named);
+});
+
+function advanceQueue() {
+  if (uploadQueue.length) {
+    showExtractModal(uploadQueue.shift());
+  } else {
+    location.reload();
+  }
+}
+
+function showExtractModal(res) {
+  const awards = res.awards || [];
+  const positions = res.positions || [];
+  const awardRows = awards.length ? awards.map(a => `
+    <div class="cand" data-k="award">
+      <div class="top">
+        <input type="checkbox" checked data-check>
+        <div style="flex:1">
+          <input type="text" class="in-title" value="${esc(a.title)}" placeholder="奖项名称">
+          <div class="fields">
+            <div><label>时间</label><input type="text" class="in-date" data-dpick value="${esc(a.date)}"></div>
+            <div><label>级别</label><input type="text" class="in-level" value="${esc(a.level)}" placeholder="国家级/省级/校级"></div>
+            <div><label>类别</label><input type="text" class="in-cat" value="${esc(a.category)}" placeholder="学业/竞赛/荣誉"></div>
+            <div><label>颁发单位</label><input type="text" class="in-org" value="${esc(a.organizer)}" placeholder="可选"></div>
+          </div>
+        </div>
+      </div>
+    </div>`).join("") : '<div class="empty">没有识别出获奖条目（可稍后在「获奖与任职」页手动添加）</div>';
+
+  const posRows = positions.length ? positions.map(p => `
+    <div class="cand" data-k="position">
+      <div class="top">
+        <input type="checkbox" checked data-check>
+        <div style="flex:1">
+          <input type="text" class="in-title" value="${esc(p.title)}" placeholder="职务名称">
+          <div class="fields">
+            <div><label>组织/单位</label><input type="text" class="in-org" value="${esc(p.org)}" placeholder="可选"></div>
+            <div><label>开始时间</label><input type="text" class="in-start" data-dpick value="${esc(p.start)}"></div>
+            <div><label>结束时间</label><input type="text" class="in-end" data-dpick value="${esc(p.end)}"></div>
+          </div>
+        </div>
+      </div>
+    </div>`).join("") : '<div class="empty">没有识别出任职条目</div>';
+
+  const isImage = /\.(jpe?g|png|bmp|webp|tiff?)$/i.test(res.file_type || "");
+  openModal(`提取结果：${res.filename}${uploadQueue.length ? `（后面还有 ${uploadQueue.length} 个文件待确认）` : ""}`,
+    `<div class="between">
+       <h3 style="margin:0;">获奖（${awards.length}）</h3>
+       <span>
+         ${isImage ? `<button class="btn small" onclick="rotateRetry(${res.file_id}, -90)">↺ 左转90°重试</button>
+                      <button class="btn small" onclick="rotateRetry(${res.file_id}, 90)">↻ 右转90°重试</button>` : ""}
+         <button class="btn small soft" onclick="aiExtractById()">AI 重新整理</button>
+       </span>
+     </div>${awardRows}
+     <h3>任职（${positions.length}）</h3>${posRows}
+     <details class="mt"><summary class="hint">查看原始识别文字</summary><pre style="white-space:pre-wrap;background:#f4fbf8;padding:12px;border-radius:8px;max-height:220px;overflow:auto;font-size:13px;">${esc(res.raw_preview || "(空)")}</pre></details>`,
+    `<button class="btn" onclick="advanceQueue()">跳过此文件</button>
+     <button class="btn" onclick="importChecked(false)">仅导入勾选项</button>
+     <button class="btn ok" onclick="importChecked(true)">全部导入</button>`);
+
+  window._candFileId = res.file_id;
+  window._candSource = res.filename;
+  makeDatePickers(document.querySelector(".modal-body"));
+}
+
+async function importChecked(all) {
+  const awards = [], positions = [];
+  document.querySelectorAll(".cand").forEach(row => {
+    const checked = row.querySelector("[data-check]").checked;
+    if (!all && !checked) return;
+    const t = row.querySelector(".in-title").value.trim();
+    if (!t) return;
+    if (row.dataset.k === "award") {
+      awards.push({ title: t, date: row.querySelector(".in-date").value.trim(),
+        level: row.querySelector(".in-level").value.trim(),
+        category: row.querySelector(".in-cat").value.trim(),
+        organizer: row.querySelector(".in-org").value.trim(),
+        source_file: window._candSource });
+    } else {
+      positions.push({ title: t, org: row.querySelector(".in-org").value.trim(),
+        start: row.querySelector(".in-start").value.trim(),
+        end: row.querySelector(".in-end").value.trim(),
+        source_file: window._candSource });
+    }
+  });
+  if (!awards.length && !positions.length) {
+    toast("没有可导入的条目");
+  } else {
+    const r = await api("/api/items/batch", { method: "POST", body: { awards, positions } });
+    let msg = `已导入 ${r.count} 条`;
+    if (r.skipped && r.skipped.length) msg += `，跳过重复 ${r.skipped.length} 条（标题和时间相同）`;
+    toast(msg, 4000);
+  }
+  advanceQueue();
+}
+
+async function viewRaw(id) {
+  const f = await api("/api/files/" + id);
+  openModal(`原文：${f.filename}`,
+    `<textarea readonly style="min-height:320px;background:#f4fbf8;">${esc(f.raw_text || "(未识别出文字，可能是扫描件且未装好 OCR)")}</textarea>` +
+    (f.raw_text && f.raw_text.length < 15 ? '<div class="hint mt8">文字太少，可能是扫描图片。装了 OCR 后会自动识别，或试试「AI 整理」。</div>' : ""),
+    `<button class="btn primary" onclick="closeModal()">关闭</button>`);
+}
+
+async function aiExtractById() {
+  const id = window._candFileId;
+  if (!id) { toast("请先上传文件"); return; }
+  try {
+    const r = await api("/api/ai/extract", { method: "POST", body: { file_id: id } });
+    const f = await api("/api/files/" + id);
+    showExtractModal({ file_id: id, filename: f.filename, file_type: f.file_type, raw_preview: f.raw_text, awards: r.awards, positions: r.positions });
+  } catch (err) { toast(err.message, 5000); }
+}
+
+async function rotateRetry(id, angle) {
+  try {
+    toast("旋转并重新识别中…");
+    const r = await api(`/api/files/${id}/rotate`, { method: "POST", body: { angle } });
+    showExtractModal(r);
+  } catch (err) { toast(err.message, 5000); }
+}
+
+async function aiExtract(id) {
+  const btn = event.target.closest("button");
+  btn.disabled = true; btn.textContent = "整理中...";
+  try {
+    const r = await api("/api/ai/extract", { method: "POST", body: { file_id: id } });
+    const f = await api("/api/files/" + id);
+    showExtractModal({ file_id: id, filename: f.filename, raw_preview: f.raw_text, awards: r.awards, positions: r.positions });
+  } catch (err) {
+    toast(err.message, 5000);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>AI 整理';
+  }
+}
+
+async function deleteFile(id) {
+  if (!confirm("确定删除这个文件吗？（已导入的条目不受影响）")) return;
+  await api("/api/files/" + id, { method: "DELETE" });
+  toast("已删除");
+  location.reload();
+}
+
+async function saveSettings() {
+  await api("/api/settings", { method: "PUT", body: {
+    api_key: val("#aiKey"), api_base: val("#aiBase"), model: val("#aiModel") } });
+  setVal("#aiKey", "");
+  toast("设置已保存");
+}
+
+const AI_PRESETS = {
+  deepseek: { base: "https://api.deepseek.com/v1", models: ["deepseek-chat", "deepseek-reasoner"] },
+  openai:   { base: "https://api.openai.com/v1",   models: ["gpt-4o-mini", "gpt-4o"] },
+  moonshot: { base: "https://api.moonshot.cn/v1",  models: ["moonshot-v1-8k", "moonshot-v1-32k"] },
+  zhipu:    { base: "https://open.bigmodel.cn/api/paas/v4", models: ["glm-4-flash", "glm-4-plus"] },
+  ollama:   { base: "http://127.0.0.1:11434/v1",   models: [] },
+};
+function applyPreset() {
+  const p = AI_PRESETS[val("#aiPreset")];
+  if (!p) return;
+  setVal("#aiBase", p.base);
+  const dl = document.getElementById("aiModelList");
+  dl.innerHTML = p.models.map(m => `<option value="${m}">`).join("");
+  if (p.models.length) setVal("#aiModel", p.models[0]);
+}
+async function testAi() {
+  const m = document.getElementById("aiTestMsg");
+  m.textContent = "测试中…";
+  try {
+    const r = await api("/api/ai/test", { api_base: val("#aiBase"), api_key: val("#aiKey"), model: val("#aiModel") });
+    m.textContent = r.ok ? "✓ 连接成功" : "✗ " + r.error;
+  } catch (e) { m.textContent = "✗ " + e.message; }
+}
+
+async function demoLoad() {
+  if (!confirm("载入虚构人物「李明」的示例资料？仅在当前账户为空时可用。")) return;
+  try { await api("/api/demo/load", { method: "POST" }); toast("示例数据已载入"); setTimeout(() => location.reload(), 500); }
+  catch (e) { toast(e.message, 5000); }
+}
+async function demoClear() {
+  if (!confirm("将清空当前账户的全部简历数据（条目、资料、教育/论文/项目），保留账户名。\n此操作不可恢复，确定继续？")) return;
+  try { await api("/api/demo/clear", { method: "POST" }); toast("已清空"); setTimeout(() => location.reload(), 500); }
+  catch (e) { toast(e.message, 5000); }
+}
+
+(async function loadSettings() {
+  try {
+    const s = await api("/api/settings");
+    // API Key 只回显掩码；输入框留空即可保持原值不变
+    setVal("#aiKey", s.api_key ? "" : "");
+    document.getElementById("aiKey").placeholder = s.api_key || "sk-...";
+    setVal("#aiBase", s.api_base);
+    setVal("#aiModel", s.model);
+    // 按已保存的接口地址反显服务商预设
+    const cur = (s.api_base || "").replace(/\/$/, "");
+    for (const [k, p] of Object.entries(AI_PRESETS)) {
+      if (cur && p.base.replace(/\/$/, "") === cur) { setVal("#aiPreset", k); break; }
+    }
+  } catch (e) { /* 忽略 */ }
+})();
+
+// ---- 手机扫码直传 ----
+async function loadQr() {
+  const box = document.getElementById("qrImg");
+  try {
+    const info = await api("/api/mobile/link");
+    document.getElementById("qrLink").href = info.url;
+    if (!info.lan || info.ip === "127.0.0.1") {
+      box.innerHTML = "局域网模式未开启<br>请用 start_lan.bat 启动";
+      document.getElementById("qrTip").textContent = `当前仅本机可访问（检测到 ${info.ip}）`;
+      return;
+    }
+    box.innerHTML = `<img src="/qr.svg?d=${encodeURIComponent(info.url)}" alt="二维码" style="width:100%;height:100%;border-radius:12px;">`;
+    document.getElementById("qrTip").innerHTML = `手机浏览器打开：<code style="word-break:break-all;">${esc(info.url)}</code>`;
+    document.getElementById("pairCode").textContent = info.pair || "——";
+  } catch (e) {
+    box.textContent = "加载失败";
+    document.getElementById("qrTip").textContent = "二维码加载失败：" + e.message;
+  }
+}
+async function rotateToken() {
+  await api("/api/mobile/rotate-token", { method: "POST" });
+  toast("二维码已重置，旧链接失效");
+  loadQr();
+}
+loadQr();
+
+// ---- 数据备份与恢复 ----
+async function loadBackups() {
+  const box = document.getElementById("backupList");
+  if (!box) return;
+  try {
+    const list = await api("/api/backups");
+    if (!list.length) { box.textContent = "还没有备份（首次启动后会自动生成）。"; return; }
+    box.innerHTML = `<table class="data"><thead><tr><th>备份时间</th><th>大小</th><th>操作</th></tr></thead><tbody>` +
+      list.map(b => `<tr>
+        <td>${esc(b.created_at || b.filename)}</td>
+        <td class="muted">${(b.size / 1024).toFixed(0)} KB</td>
+        <td><button class="btn small" onclick="restoreBackup('${esc(b.filename)}')">恢复此快照</button></td>
+      </tr>`).join("") + `</tbody></table>`;
+  } catch (e) { box.textContent = "备份列表加载失败：" + e.message; }
+}
+async function restoreBackup(name) {
+  if (!confirm(`确定把全部数据恢复到快照 ${name} 吗？\n\n恢复前当前状态会先自动备份一份；\n但上次备份之后新增/修改的内容会被覆盖，请确认。`)) return;
+  try {
+    await api("/api/backups/restore", { method: "POST", body: { filename: name } });
+    toast("已恢复，页面即将刷新");
+    setTimeout(() => location.reload(), 800);
+  } catch (e) { toast(e.message, 5000); }
+}
+loadBackups();
+</script>
+{% endblock %}

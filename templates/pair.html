@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>设备配对 · 滴鱼简历助手</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+         background:#f0f4f6; min-height:100vh; display:flex; align-items:center; justify-content:center; color:#24292f; }
+  .card { width:min(400px,92vw); background:#fff; border-radius:16px; padding:28px;
+          box-shadow:0 10px 40px rgba(15,23,42,.10); text-align:center; }
+  .logo { font-weight:800; color:#0f766e; margin-bottom:4px; }
+  .sub { font-size:12.5px; color:#8896a3; margin-bottom:18px; }
+  h2 { margin:0 0 8px; font-size:19px; }
+  p { font-size:13.5px; color:#5a6672; line-height:1.7; margin:0 0 16px; }
+  input { width:100%; text-align:center; letter-spacing:8px; font-size:22px; font-weight:700;
+          padding:12px; border:1px solid #d6dee4; border-radius:12px; text-transform:uppercase; }
+  button { width:100%; margin-top:14px; padding:12px; border:none; border-radius:12px;
+           background:#0f766e; color:#fff; font-size:15px; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.6; }
+  .msg { font-size:13px; margin-top:10px; min-height:18px; }
+  .err { color:#b3413b; } .ok { color:#0e7a52; }
+  .dev { margin-top:16px; font-size:11.5px; color:#9aa6b2; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">滴鱼简历助手</div>
+  <div class="sub">XG Resume Studio</div>
+  <h2>设备配对</h2>
+  <p>请输入电脑端启动窗口（或首页二维码下方）显示的 <b>6 位配对码</b>，<br>本设备将在该浏览器内获得 30 天访问权限。</p>
+  <input id="code" maxlength="6" autocomplete="off" placeholder="●●●●●●"
+         oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')"
+         onkeydown="if(event.key==='Enter')submitPair()">
+  <button id="go" onclick="submitPair()">配对并继续</button>
+  <div class="msg" id="msg"></div>
+  <div class="dev">Developed by Wolfentsz</div>
+</div>
+<script>
+const NEXT = {{ next | tojson }};
+async function submitPair() {
+  const code = document.getElementById("code").value.trim();
+  const m = document.getElementById("msg");
+  if (code.length !== 6) { m.className = "msg err"; m.textContent = "请输入完整的 6 位配对码"; return; }
+  const b = document.getElementById("go");
+  b.disabled = true; b.textContent = "配对中…";
+  try {
+    const r = await fetch("/api/pair", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, next: NEXT }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || "配对失败");
+    m.className = "msg ok"; m.textContent = "✓ 配对成功，正在进入…";
+    setTimeout(() => location.href = d.next || "/", 500);
+  } catch (e) {
+    m.className = "msg err"; m.textContent = e.message;
+    b.disabled = false; b.textContent = "配对并继续";
+  }
+}
+</script>
+</body>
+</html>
