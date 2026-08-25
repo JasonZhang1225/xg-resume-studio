@@ -4,7 +4,8 @@
 > 填好资料后用四套场景化 A4 模板一键产出简历（网页预览 / 打印存 PDF / Word 下载）。
 > 所有数据只存在你自己的电脑里。
 
-![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/MapleLloyd/xg-resume-studio/actions/workflows/ci.yml/badge.svg)
+![Build EXE](https://github.com/MapleLloyd/xg-resume-studio/actions/workflows/build.yml/badge.svg)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 <!-- 截图占位：发布前请替换为真实截图（使用示例数据拍摄，勿含个人信息）
@@ -27,7 +28,13 @@
 
 ## 🚀 快速开始
 
-### Windows（推荐）
+### 绿色免安装版（推荐给普通用户）
+
+1. 打开 [Releases 页面](https://github.com/MapleLloyd/xg-resume-studio/releases) 下载最新的 `XG-Resume-Studio-v*.zip`
+2. 解压后双击「滴鱼简历助手.exe」即可使用（首次启动如遇 SmartScreen 提示，点「更多信息 → 仍要运行」）
+3. 全部数据保存在程序旁的 `data` 文件夹内；升级新版本时保留该文件夹即可
+
+### 从源码运行（Windows）
 
 1. 安装 [Python 3.10–3.14](https://www.python.org/downloads/)（勾选 Add to PATH）
 2. 双击 `滴鱼简历助手.bat` —— 首次运行会自动创建虚拟环境并安装依赖（几分钟，请勿关窗），然后打开浏览器
@@ -36,7 +43,7 @@
 ### macOS / Linux
 
 ```bash
-git clone <仓库地址> resume-studio && cd resume-studio
+git clone https://github.com/MapleLloyd/xg-resume-studio.git resume-studio && cd resume-studio
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app:app --host 127.0.0.1 --port 8000
