@@ -15,7 +15,7 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "sec.db"))
     db.init_db()
     db.set_setting("initialized", "1")
-    return TestClient(app)
+    return TestClient(app, client=("127.0.0.1", 50000))
 
 
 def test_mutation_without_origin_allowed(client):

@@ -70,7 +70,7 @@ def _needs_setup() -> bool:
     return db.get_setting("initialized") != "1"
 
 
-# ---------- 局域网配对码（仅 RESUME_LAN=1 时生效） ----------
+# ---------- 局域网扫码直传 ----------
 
 _PAIR_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # 去掉易混淆的 0/O/1/I
 
@@ -87,10 +87,33 @@ def _is_loopback(host: str) -> bool:
     return host in ("127.0.0.1", "::1", "localhost")
 
 
+def _lan_enabled() -> bool:
+    """扫码直传默认开启；前端选择会持久化，环境变量保留为启动级覆盖。"""
+    forced = os.environ.get("RESUME_LAN")
+    if forced in ("0", "1"):
+        return forced == "1"
+    saved = db.get_setting("lan_enabled")
+    if saved in ("0", "1"):
+        return saved == "1"
+    return True
+
+
 @app.middleware("http")
 async def _entry_gate(request, call_next):
     """入口门卫：① 未完成向导 → 重定向 /setup；
-    ② 局域网模式下，非本机设备必须持有效配对 Cookie，否则引导到 /pair 输码。"""
+    ② 直传关闭时拒绝所有远程请求；
+    ③ 直传开启时，非本机设备必须持有效配对 Cookie，否则引导到 /pair 输码。"""
+    client_ip = request.client.host if request.client else ""
+    is_remote = not _is_loopback(client_ip)
+    if is_remote and not _lan_enabled():
+        if request.url.path.startswith("/api/") or request.method != "GET":
+            return JSONResponse({"detail": "手机扫码直传已在电脑端关闭"}, status_code=403)
+        return HTMLResponse(
+            "<meta charset='utf-8'><body style='font-family:sans-serif;text-align:center;padding-top:80px;color:#555'>"
+            "<h3>手机扫码直传已关闭</h3><p>请先在电脑端首页打开扫码直传开关。</p></body>",
+            status_code=403,
+        )
+
     if _needs_setup():
         p = request.url.path
         allowed = ("/setup", "/static/", "/api/setup", "/api/ai/test", "/api/assistant/avatar")
@@ -99,19 +122,17 @@ async def _entry_gate(request, call_next):
                 return JSONResponse({"detail": "请先完成初始化向导", "need_setup": True}, status_code=403)
             return RedirectResponse("/setup")
 
-    if os.environ.get("RESUME_LAN") == "1":
-        client_ip = request.client.host if request.client else ""
-        if not _is_loopback(client_ip):
-            got = request.cookies.get("pair") or ""
-            if not secrets.compare_digest(got, _pair_code()):
-                p = request.url.path
-                if p == "/pair" or p.startswith("/api/pair"):
-                    pass  # 配对页与配对接口本身放行
-                elif p.startswith("/api/") or request.method != "GET":
-                    return JSONResponse({"detail": "请先输入配对码", "need_pair": True}, status_code=403)
-                else:
-                    from urllib.parse import quote
-                    return RedirectResponse("/pair?next=" + quote(p))
+    if is_remote and _lan_enabled():
+        got = request.cookies.get("pair") or ""
+        if not secrets.compare_digest(got, _pair_code()):
+            p = request.url.path
+            if p == "/pair" or p.startswith("/api/pair"):
+                pass  # 配对页与配对接口本身放行
+            elif p.startswith("/api/") or request.method != "GET":
+                return JSONResponse({"detail": "请先输入配对码", "need_pair": True}, status_code=403)
+            else:
+                from urllib.parse import quote
+                return RedirectResponse("/pair?next=" + quote(p))
 
     return await call_next(request)
 
@@ -170,7 +191,7 @@ def _base_ctx(request: Request, **extra):
         "cur_uid": uid,
         "cur_user": db.get_row("users", uid) or {"id": uid, "name": "?", "avatar": ""},
         "users": db.all_rows("users", "id ASC"),
-        "lan_mode": os.environ.get("RESUME_LAN") == "1",
+        "lan_mode": _lan_enabled(),
         "is_remote": not _is_loopback(request.client.host if request.client else "127.0.0.1"),
     }
     ctx.update(extra)
@@ -368,7 +389,7 @@ def index(request: Request):
         position_count=len(db.get_rows_where("positions", "user_id=?", (uid,))),
         cert_count=len(db.get_rows_where("certificates", "user_id=?", (uid,))),
         has_ai=bool(db.get_setting("api_key")),
-        lan_mode=os.environ.get("RESUME_LAN") == "1",
+        lan_mode=_lan_enabled(),
     ))
 
 
@@ -1090,13 +1111,34 @@ def mobile_link(request: Request):
     tok = _mobile_token(uid)
     ip = _lan_ip()
     port = request.url.port or 8000
+    enabled = _lan_enabled()
     return {
         "url": f"http://{ip}:{port}/m?t={tok}",
         "token": tok,
         "ip": ip,
-        "lan": os.environ.get("RESUME_LAN") == "1",
-        "pair": _pair_code() if os.environ.get("RESUME_LAN") == "1" else "",
+        "lan": enabled,
+        "pair": _pair_code() if enabled else "",
+        "can_manage": (
+            _is_loopback(request.client.host if request.client else "")
+            and os.environ.get("RESUME_LAN") not in ("0", "1")
+        ),
     }
+
+
+@app.post("/api/mobile/lan")
+def mobile_lan_toggle(request: Request, payload: dict):
+    """仅电脑本机可以开关远程入口，避免已配对设备修改暴露状态。"""
+    if not _is_loopback(request.client.host if request.client else ""):
+        raise HTTPException(403, "只能在电脑本机开关扫码直传")
+    enabled = payload.get("enabled")
+    if not isinstance(enabled, bool):
+        raise HTTPException(400, "enabled 必须是布尔值")
+    if os.environ.get("RESUME_LAN") in ("0", "1"):
+        raise HTTPException(409, "当前启动方式已固定扫码直传状态")
+    db.set_setting("lan_enabled", "1" if enabled else "0")
+    if enabled:
+        _pair_code()
+    return {"ok": True, "lan": enabled}
 
 
 @app.post("/api/mobile/rotate-token")
@@ -1167,8 +1209,8 @@ def mobile_page(request: Request, t: str = ""):
     })
 
 
-if os.environ.get("RESUME_LAN") == "1":
-    print(f"[LAN] 配对码: {_pair_code()}  （手机等设备首次打开页面时需输入，每次启动刷新）", flush=True)
+if _lan_enabled():
+    print(f"[LAN] 配对码: {_pair_code()}  （手机等设备首次打开页面时需输入）", flush=True)
 
 
 # ---------- 首次启动向导 / 示例数据 ----------

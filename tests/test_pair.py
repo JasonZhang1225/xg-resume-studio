@@ -18,7 +18,17 @@ def lan_client(monkeypatch, tmp_path):
     db.init_db()
     db.set_setting("initialized", "1")
     db.set_setting("pair_code", CODE)
-    return TestClient(app, follow_redirects=False)
+    return TestClient(app, follow_redirects=False, client=("192.168.1.20", 50000))
+
+
+@pytest.fixture()
+def local_client(monkeypatch, tmp_path):
+    monkeypatch.delenv("RESUME_LAN", raising=False)
+    monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "local.db"))
+    db.init_db()
+    db.set_setting("initialized", "1")
+    db.set_setting("pair_code", CODE)
+    return TestClient(app, follow_redirects=False, client=("127.0.0.1", 50000))
 
 
 def test_unpaired_remote_redirected_to_pair(lan_client):
@@ -50,3 +60,29 @@ def test_open_redirect_blocked(lan_client):
     r = lan_client.post("/api/pair", json={"code": CODE, "next": "//evil.example"})
     assert r.status_code == 200
     assert r.json()["next"] == "/"
+
+
+def test_lan_is_enabled_by_default(local_client):
+    r = local_client.get("/api/mobile/link")
+    assert r.status_code == 200
+    assert r.json()["lan"] is True
+    assert r.json()["can_manage"] is True
+
+
+def test_local_user_can_disable_lan_and_remote_access_is_blocked(local_client):
+    r = local_client.post("/api/mobile/lan", json={"enabled": False})
+    assert r.status_code == 200
+    assert db.get_setting("lan_enabled") == "0"
+    assert local_client.get("/").status_code == 200
+
+    remote = TestClient(app, follow_redirects=False, client=("192.168.1.20", 50000))
+    blocked = remote.get("/")
+    assert blocked.status_code == 403
+    assert "扫码直传已关闭" in blocked.text
+
+
+def test_remote_device_cannot_change_lan_setting(local_client):
+    remote = TestClient(app, follow_redirects=False, client=("192.168.1.20", 50000))
+    remote.cookies.set("pair", db.get_setting("pair_code"))
+    r = remote.post("/api/mobile/lan", json={"enabled": False})
+    assert r.status_code == 403
