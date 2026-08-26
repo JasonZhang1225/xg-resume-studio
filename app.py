@@ -1,5 +1,6 @@
 """滴鱼简历助手 XG Resume Studio —— 本地运行、数据不出电脑的个人简历管理系统。"""
 import io
+import ipaddress
 import json
 import os
 import re
@@ -7,6 +8,7 @@ import secrets
 import shutil
 import socket
 import sqlite3
+import subprocess
 import sys
 import uuid
 from datetime import datetime
@@ -1087,16 +1089,128 @@ def delete_user(uid: int, response: Response):
 
 # ---------- 手机扫码直传 ----------
 
-def _lan_ip():
-    """探测本机局域网 IP；失败时回环地址（扫码不可用但不报错）。"""
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+def _default_gateway():
+    """跨平台读取默认网关 IPv4；失败返回 None。"""
     try:
-        s.connect(("8.8.8.8", 80))
-        return s.getsockname()[0]
+        if sys.platform.startswith("win"):
+            out = subprocess.run(
+                ["route", "print", "0.0.0.0"],
+                capture_output=True, text=True, timeout=4,
+            ).stdout
+            # 行格式：0.0.0.0 0.0.0.0 网关 接口 度量
+            for line in out.splitlines():
+                parts = line.split()
+                if len(parts) >= 3 and parts[0] == "0.0.0.0" and parts[1] == "0.0.0.0":
+                    for token in parts[2:]:
+                        try:
+                            addr = ipaddress.ip_address(token)
+                        except ValueError:
+                            continue
+                        if (
+                            addr.version == 4
+                            and addr.is_private
+                            and not addr.is_loopback
+                            and not addr.is_unspecified
+                            and not addr.is_link_local
+                            and int(addr) >> 24 not in (100, 198)
+                        ):
+                            return token
+        else:
+            out = subprocess.run(
+                ["netstat", "-rn"],
+                capture_output=True, text=True, timeout=4,
+            ).stdout
+            for line in out.splitlines():
+                parts = line.split()
+                if len(parts) >= 2 and parts[0].lower() in ("default", "0.0.0.0"):
+                    for token in parts[1:]:
+                        try:
+                            addr = ipaddress.ip_address(token)
+                        except ValueError:
+                            continue
+                        if (
+                            addr.version == 4
+                            and addr.is_private
+                            and not addr.is_loopback
+                            and not addr.is_unspecified
+                            and not addr.is_link_local
+                            and int(addr) >> 24 not in (100, 198)
+                        ):
+                            return token
     except Exception:
-        return "127.0.0.1"
-    finally:
+        pass
+    return None
+
+
+def _lan_ip():
+    """枚举本机局域网 IPv4，优先选择与默认网关同网段的私网地址。"""
+    candidates = set()
+    # 1) 主机名解析出的本机地址
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            candidates.add(info[4][0])
+    except OSError:
+        pass
+    try:
+        for ip in socket.gethostbyname_ex(socket.gethostname())[2]:
+            candidates.add(ip)
+    except OSError:
+        pass
+    # 2) 兜底：UDP 探测默认出口地址（仅作候选）
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        candidates.add(s.getsockname()[0])
         s.close()
+    except OSError:
+        pass
+
+    def _is_usable(ip):
+        try:
+            addr = ipaddress.ip_address(ip)
+        except ValueError:
+            return False
+        if addr.version != 4:
+            return False
+        if addr.is_loopback or addr.is_link_local or addr.is_multicast or addr.is_unspecified:
+            return False
+        first = int(addr) >> 24
+        if first == 100:   # CGNAT / Tailscale
+            return False
+        if first == 198:   # 198.18.0.0/15 基准测试网段（常见于 Meta Tunnel 等）
+            return False
+        return True
+
+    usable = [ip for ip in candidates if _is_usable(ip)]
+    if not usable:
+        return "127.0.0.1"
+
+    gateway = _default_gateway()
+    gateway_net = None
+    if gateway:
+        try:
+            gateway_net = ipaddress.ip_network(f"{gateway}/24", strict=False)
+        except ValueError:
+            gateway_net = None
+
+    def _score(ip):
+        addr = ipaddress.ip_address(ip)
+        s = 0
+        if addr.is_private:
+            s += 10
+        first = int(addr) >> 24
+        if first == 192:
+            s += 3
+        elif first == 10:
+            s += 2
+        elif first == 172:
+            s += 1
+        if gateway_net and ipaddress.ip_address(ip) in gateway_net:
+            s += 20
+        return s
+
+    usable.sort(key=_score, reverse=True)
+    return usable[0]
 
 
 def _mobile_token(uid: int, force: bool = False):

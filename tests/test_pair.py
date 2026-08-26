@@ -86,3 +86,36 @@ def test_remote_device_cannot_change_lan_setting(local_client):
     remote.cookies.set("pair", db.get_setting("pair_code"))
     r = remote.post("/api/mobile/lan", json={"enabled": False})
     assert r.status_code == 403
+
+
+def test_lan_ip_skips_tunnel_and_virtual_networks(monkeypatch):
+    """选择局域网 IP 时不得落在隧道/基准测试网段（如 198.18.x 或 100.x）。"""
+    import app as appmod
+
+    candidates = [
+        "198.18.0.1",   # Meta Tunnel
+        "100.90.51.6",  # Tailscale / CGNAT
+        "172.27.192.1", # Hyper-V
+        "192.168.228.1",# VMware VMnet1
+        "192.168.233.1",# VMware VMnet8
+        "192.168.10.99",# 真实 Wi-Fi 网卡
+        "192.168.10.4", # 真实有线网卡
+    ]
+    monkeypatch.setattr(
+        appmod,
+        "_default_gateway",
+        lambda: "192.168.10.1",
+    )
+    monkeypatch.setattr(appmod.socket, "getaddrinfo", lambda *a, **k: [])
+    monkeypatch.setattr(
+        appmod.socket, "gethostbyname_ex",
+        lambda *a, **k: ("host", [], candidates),
+    )
+    # 屏蔽 UDP 兜底探测，避免受真实网络影响
+    monkeypatch.setattr(appmod.socket, "socket", lambda *a, **k: _raise())
+    got = appmod._lan_ip()
+    assert got in ("192.168.10.99", "192.168.10.4")
+
+
+def _raise():
+    raise OSError("no udp")
