@@ -27,6 +27,8 @@ import parsers
 FROZEN = getattr(sys, "frozen", False)
 BASE_DIR = Path(getattr(sys, "_MEIPASS", "")) if FROZEN else Path(__file__).resolve().parent
 APP_ROOT = Path(sys.executable).resolve().parent if FROZEN else BASE_DIR
+# 静态资源版本：每次发布更新后递增，避免浏览器复用旧的 CSS/JS 缓存。
+ASSET_VERSION = "20260826-lan-switch-2"
 # 用户运行时数据统一放在 data/ 下（数据库/备份/上传件），打包分享时整体排除
 RUNTIME_DIR = APP_ROOT / "data"
 UPLOAD_DIR = RUNTIME_DIR / "uploads"
@@ -193,6 +195,7 @@ def _base_ctx(request: Request, **extra):
         "users": db.all_rows("users", "id ASC"),
         "lan_mode": _lan_enabled(),
         "is_remote": not _is_loopback(request.client.host if request.client else "127.0.0.1"),
+        "asset_version": ASSET_VERSION,
     }
     ctx.update(extra)
     return ctx
