@@ -456,7 +456,7 @@ async function loadQr() {
       document.getElementById("qrTip").textContent = "请确认电脑已连接 Wi-Fi 或有线局域网。";
       return;
     }
-    box.innerHTML = `<img src="/qr.svg?d=${encodeURIComponent(info.url)}" alt="二维码" style="width:100%;height:100%;border-radius:12px;">`;
+    box.innerHTML = `<img src="/qr.svg?fmt=png&d=${encodeURIComponent(info.url)}" alt="二维码" style="width:100%;height:100%;border-radius:12px;">`;
     document.getElementById("qrTip").innerHTML = `手机浏览器打开：<code style="word-break:break-all;">${esc(info.url)}</code>`;
     document.getElementById("pairCode").textContent = info.pair || "——";
   } catch (e) {

@@ -1295,17 +1295,32 @@ def auth_logout(response: Response, payload: dict):
 
 
 @app.get("/qr.svg")
-def qr_svg(d: str = ""):
+def qr_svg(d: str = "", fmt: str = "png"):
+    """生成扫码直传二维码。默认 PNG（相机识别最稳），也支持 ?fmt=svg 兜底。"""
     import qrcode
-    import qrcode.image.svg
     if not d:
         raise HTTPException(400, "缺少二维码内容")
     if len(d) > 512:
         raise HTTPException(400, "二维码内容过长")
-    img = qrcode.make(d, image_factory=qrcode.image.svg.SvgPathImage, box_size=14, border=2)
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(d)
+    qr.make(fit=True)
+    if fmt == "svg":
+        import qrcode.image.svg
+        img = qr.make_image(image_factory=qrcode.image.svg.SvgPathImage)
+        buf = io.BytesIO()
+        img.save(buf)
+        return Response(content=buf.getvalue(), media_type="image/svg+xml")
+    from qrcode.image.pil import PilImage
+    img = qr.make_image(image_factory=PilImage)
     buf = io.BytesIO()
-    img.save(buf)
-    return Response(content=buf.getvalue(), media_type="image/svg+xml")
+    img.save(buf, format="PNG")
+    return Response(content=buf.getvalue(), media_type="image/png")
 
 
 @app.get("/m", response_class=HTMLResponse)
