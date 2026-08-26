@@ -1230,7 +1230,7 @@ def mobile_link(request: Request):
     port = request.url.port or 8000
     enabled = _lan_enabled()
     return {
-        "url": f"http://{ip}:{port}/m?t={tok}",
+        "url": f"http://{ip}:{port}/m/{tok}",
         "token": tok,
         "ip": ip,
         "lan": enabled,
@@ -1339,6 +1339,12 @@ def mobile_page(request: Request, t: str = ""):
     return templates.TemplateResponse(request, "mobile_upload.html", {
         "uid": uid, "user_name": user["name"], "token": t,
     })
+
+
+@app.get("/m/{token}", response_class=HTMLResponse)
+def mobile_page_path(request: Request, token: str = ""):
+    """令牌走路径（无查询参数），避免部分手机相机在长二维码中丢弃 ?t= 后面内容。"""
+    return mobile_page(request, t=token)
 
 
 if _lan_enabled():

@@ -69,6 +69,16 @@ def test_lan_is_enabled_by_default(local_client):
     assert r.json()["can_manage"] is True
 
 
+def test_mobile_link_uses_path_token_without_query(local_client):
+    """直传链接应把令牌放路径（无 ?t=），避免 iOS/部分相机扫码丢令牌。"""
+    r = local_client.get("/api/mobile/link")
+    assert r.status_code == 200
+    body = r.json()
+    url = body["url"]
+    assert url.endswith(f"/m/{body['token']}")
+    assert "?" not in url
+
+
 def test_local_user_can_disable_lan_and_remote_access_is_blocked(local_client):
     r = local_client.post("/api/mobile/lan", json={"enabled": False})
     assert r.status_code == 200

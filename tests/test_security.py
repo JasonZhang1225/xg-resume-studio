@@ -47,7 +47,7 @@ def test_qr_defaults_to_png_with_complete_payload(client):
     import cv2
     from PIL import Image
 
-    url = "http://192.168.10.99:8000/m?t=abc123def456ghij789klmn0"
+    url = "http://192.168.10.99:8000/m/abc123def456ghij789klmn0"
     r = client.get("/qr.svg", params={"fmt": "png", "d": url})
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("image/png")
