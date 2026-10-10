@@ -27,6 +27,7 @@ def main():
 
     import uvicorn
     from app import app
+    import database as db
 
     # 始终监听局域网地址；是否允许远程访问由应用内的扫码直传开关安全控制。
     config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="warning")
@@ -42,7 +43,7 @@ def main():
     print("  滴鱼简历助手已启动")
     print(f"  地址：{url}  （浏览器应已自动打开）")
     print("  使用期间请保持本窗口开启；关闭窗口即退出程序。")
-    print("  你的全部数据保存在本程序旁的 data 文件夹内。")
+    print(f"  你的全部数据保存在：{db.DATA_DIR}")
     print("=" * 52)
     print()
 

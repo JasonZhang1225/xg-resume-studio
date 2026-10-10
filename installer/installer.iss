@@ -29,7 +29,7 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 CloseApplications=yes
-; 安装到用户目录，无需管理员权限，程序旁的 data 文件夹可正常读写
+; 安装到用户目录，无需管理员权限；用户数据在 %APPDATA%\XG Resume Studio\data，覆盖安装不受影响
 
 [Languages]
 Name: "chinesesimp"; MessagesFile: "installer\languages\ChineseSimplified.isl"
@@ -55,9 +55,12 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then
   begin
-    if MsgBox('是否同时删除你的全部简历数据（程序目录下的 data 文件夹）？' + #13#10 + #13#10 +
+    if MsgBox('是否同时删除你的全部简历数据？' + #13#10 +
+              ExpandConstant('{userappdata}\XG Resume Studio\data') + #13#10 + #13#10 +
               '选择「否」将保留数据，以后重装可继续使用。', mbConfirmation, MB_YESNO) = IDYES then
     begin
+      DelTree(ExpandConstant('{userappdata}\XG Resume Studio\data'), True, True, True);
+      { 老版本放在程序目录下的数据一并清理 }
       DelTree(ExpandConstant('{app}\data'), True, True, True);
     end;
   end;

@@ -42,7 +42,9 @@ jobs:
 
       - name: Smoke test (server starts, page content + LAN listener)
         run: |
-          Start-Process -FilePath ".\dist\滴鱼简历助手\滴鱼简历助手.exe" -PassThru | Out-Null
+          # 冒烟测试用独立数据目录，不在 dist 里留下任何数据
+          $env:RESUME_DATA_DIR = "$env:RUNNER_TEMP\xg-smoke-data"
+          $proc = Start-Process -FilePath ".\dist\滴鱼简历助手\滴鱼简历助手.exe" -PassThru
           Start-Sleep -Seconds 25
           $ok = $false
           foreach ($p in 8000..8010) {
@@ -53,11 +55,16 @@ jobs:
               if ($r.StatusCode -eq 200 -and $r.Content -match "滴鱼简历助手" -and $lanListener) { $ok = $true; break }
             } catch { }
           }
+          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
           if (-not $ok) { throw "EXE smoke test failed: HTTP/page content/LAN listener missing on 8000~8010" }
           Write-Host "Smoke test passed (HTTP 200 + page content + LAN listener)."
 
-      - name: Clean test data
-        run: Remove-Item -Recurse -Force "dist/滴鱼简历助手/data" -ErrorAction SilentlyContinue
+      - name: Ensure no user data in package
+        run: |
+          Get-Process -Name "滴鱼简历助手" -ErrorAction SilentlyContinue | Stop-Process -Force
+          Start-Sleep -Seconds 2
+          if (Test-Path "dist/滴鱼简历助手/data") { Remove-Item -Recurse -Force "dist/滴鱼简历助手/data" }
+          if (Test-Path "dist/滴鱼简历助手/data") { throw "dist 里仍有 data 目录，拒绝打包" }
 
       - name: Install Inno Setup
         run: choco install innosetup -y --no-progress

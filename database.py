@@ -1,20 +1,75 @@
 import json
 import os
+import shutil
 import sqlite3
 import sys
 from datetime import datetime
 
-# PyInstaller 打包态下，数据库跟随 exe 所在目录；源码态跟随本文件目录
+# PyInstaller 打包态下 BASE_DIR 是 exe 所在目录；源码态是本文件目录
 if getattr(sys, "frozen", False):
     BASE_DIR = os.path.dirname(sys.executable)
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# 所有用户数据统一收敛到 data/ 目录（开源打包时整体排除即可）
-if getattr(sys, "frozen", False) and sys.platform == "darwin":
-    # macOS .app 包内只读且会破坏签名，数据放到「应用程序支持」目录
-    DATA_DIR = os.path.join(os.path.expanduser("~/Library/Application Support"), "XG Resume Studio", "data")
+APP_DIR_NAME = "XG Resume Studio"
+# 老版本（含 Windows 安装版/绿色版）把数据放在程序旁的 data/
+LEGACY_DATA_DIR = os.path.join(BASE_DIR, "data")
+# 程序旁放一个 portable.txt 即为便携模式：数据继续跟着程序走（U 盘随身用）
+PORTABLE = os.path.exists(os.path.join(BASE_DIR, "portable.txt"))
+
+
+def _user_data_dir():
+    """打包版的数据放在用户目录，与安装位置脱钩：换目录、覆盖安装、绿色版/安装版互换都不丢。"""
+    if sys.platform == "darwin":
+        root = os.path.expanduser("~/Library/Application Support")
+    elif sys.platform == "win32":
+        root = os.environ.get("APPDATA") or os.path.expanduser("~\\AppData\\Roaming")
+    else:
+        root = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    return os.path.join(root, APP_DIR_NAME, "data")
+
+
+# 所有用户数据统一收敛到 DATA_DIR（数据库/上传件/备份）；源码运行仍用仓库内 data/
+if os.environ.get("RESUME_DATA_DIR"):
+    DATA_DIR = os.environ["RESUME_DATA_DIR"]
+elif getattr(sys, "frozen", False) and not PORTABLE:
+    DATA_DIR = _user_data_dir()
 else:
-    DATA_DIR = os.path.join(BASE_DIR, "data")
+    DATA_DIR = LEGACY_DATA_DIR
+MIGRATED_MARK = "数据已迁移到新位置.txt"
+
+
+def migrate_legacy_data():
+    """新位置还没有数据库、旧的程序旁 data/ 有，就整体复制过去。旧目录原样保留并留一张说明。"""
+    if os.path.normcase(os.path.abspath(DATA_DIR)) == os.path.normcase(os.path.abspath(LEGACY_DATA_DIR)):
+        return False
+    if os.path.exists(os.path.join(DATA_DIR, "data.db")):
+        return False
+    if not os.path.isfile(os.path.join(LEGACY_DATA_DIR, "data.db")):
+        return False
+    shutil.copytree(LEGACY_DATA_DIR, DATA_DIR, dirs_exist_ok=True,
+                    ignore=shutil.ignore_patterns(MIGRATED_MARK))
+    try:
+        with open(os.path.join(LEGACY_DATA_DIR, MIGRATED_MARK), "w", encoding="utf-8") as f:
+            f.write(f"{datetime.now():%Y-%m-%d %H:%M} 已把本文件夹的数据复制到：\n{DATA_DIR}\n"
+                    "程序今后读写新位置；本文件夹是旧副本，确认新位置数据完整后可自行删除。\n")
+    except OSError:
+        pass
+    return True
+
+
+def legacy_data_pending():
+    """旧目录有数据但没迁移过（新位置已经有别的库），设置页提示用户可以手动导入。"""
+    if os.path.normcase(os.path.abspath(DATA_DIR)) == os.path.normcase(os.path.abspath(LEGACY_DATA_DIR)):
+        return False
+    return (os.path.isfile(os.path.join(LEGACY_DATA_DIR, "data.db"))
+            and not os.path.exists(os.path.join(LEGACY_DATA_DIR, MIGRATED_MARK)))
+
+
+if not os.environ.get("RESUME_DATA_DIR") and not os.environ.get("RESUME_DB"):
+    try:
+        migrate_legacy_data()
+    except OSError:
+        pass  # 迁移失败不阻塞启动；旧数据仍在原处，设置页会提示
 os.makedirs(DATA_DIR, exist_ok=True)
 # 测试/多实例可通过环境变量把数据库指到别处
 DB_PATH = os.environ.get("RESUME_DB") or os.path.join(DATA_DIR, "data.db")
