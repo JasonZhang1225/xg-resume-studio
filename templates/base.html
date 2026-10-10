@@ -23,9 +23,11 @@
       {% if assistant_avatar %}<img class="nav-avatar" src="{{ assistant_avatar }}" alt="小点">{% else %}{{ icon("bot") }}{% endif %}
       <span>小点</span>
     </a>
-    <a href="/resume" class="{{ 'active' if active == 'resume' else '' }}">{{ icon("file-text") }}<span>简历预览</span></a>
     <a href="/changelog" class="{{ 'active' if active == 'changelog' else '' }}">{{ icon("info") }}<span>更新日志</span></a>
   </div>
+  <div class="nav-right">
+  <a class="btn small primary nav-preview" href="/resume" title="打开简历预览与导出">{{ icon("eye") }}<span>简历预览</span></a>
+  <a class="nav-gear {{ 'active' if active == 'settings' else '' }}" href="/settings" title="设置" aria-label="设置">{{ icon("settings") }}</a>
   <div class="userwrap">
     <button class="userchip" onclick="toggleUserMenu(event)" title="切换账户">
       <span class="uc-ava">{{ (cur_user.name or "?")[:1] }}</span>
@@ -65,6 +67,7 @@
         <button class="btn small ok" onclick="createUser()">创建</button>
       </div>
     </div>
+  </div>
   </div>
 </nav>
 <main class="container">

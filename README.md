@@ -73,7 +73,7 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 
 | 服务商 | 接口地址 | 推荐模型 |
 | --- | --- | --- |
-| DeepSeek | `https://api.deepseek.com/v1` | `deepseek-chat` |
+| DeepSeek | `https://api.deepseek.com` | `deepseek-chat` |
 | OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
 | Moonshot Kimi | `https://api.moonshot.cn/v1` | `moonshot-v1-8k` |
 | 智谱 GLM | `https://open.bigmodel.cn/api/paas/v4` | `glm-4-flash` |

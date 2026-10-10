@@ -10,7 +10,11 @@ if getattr(sys, "frozen", False):
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 所有用户数据统一收敛到 data/ 目录（开源打包时整体排除即可）
-DATA_DIR = os.path.join(BASE_DIR, "data")
+if getattr(sys, "frozen", False) and sys.platform == "darwin":
+    # macOS .app 包内只读且会破坏签名，数据放到「应用程序支持」目录
+    DATA_DIR = os.path.join(os.path.expanduser("~/Library/Application Support"), "XG Resume Studio", "data")
+else:
+    DATA_DIR = os.path.join(BASE_DIR, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 # 测试/多实例可通过环境变量把数据库指到别处
 DB_PATH = os.environ.get("RESUME_DB") or os.path.join(DATA_DIR, "data.db")

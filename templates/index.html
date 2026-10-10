@@ -55,12 +55,12 @@
       <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
         <a class="btn small" id="qrLink" target="_blank" href="#">打开直传页</a>
         <button class="btn small" id="rotateQrBtn" onclick="rotateToken()">重置二维码</button>
+      </div>
       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
         <label class="hint" for="manualIp" style="margin:0;">手动指定局域网 IP（可选）：</label>
         <input type="text" id="manualIp" placeholder="如 192.168.1.100" style="max-width:180px;flex:1;min-width:140px;">
         <button class="btn small" onclick="saveManualIp()">保存</button>
         <button class="btn small" onclick="clearManualIp()">清除</button>
-      </div>
       </div>
     </div>
   </div>
@@ -92,65 +92,6 @@
   {% else %}
   <div class="empty">还没有上传过文件</div>
   {% endif %}
-</div>
-
-<div class="card">
-  <div class="between">
-    <h2 style="margin:0;">{{ icon("settings") }}AI 智能整理（可选）</h2>
-    <span class="tag amber">配置你自己的大模型 API，解锁 AI 整理与小点助手</span>
-  </div>
-  <div class="form-grid mt8">
-    <div class="form-group">
-      <label>服务商预设</label>
-      <select id="aiPreset" onchange="applyPreset()">
-        <option value="">— 自定义 —</option>
-        <option value="deepseek">DeepSeek（国内，便宜）</option>
-        <option value="openai">OpenAI</option>
-        <option value="moonshot">Moonshot Kimi</option>
-        <option value="zhipu">智谱 GLM</option>
-        <option value="ollama">Ollama（本地模型）</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label>接口地址（兼容 OpenAI）</label>
-      <input type="text" id="aiBase" placeholder="https://api.deepseek.com/v1">
-    </div>
-    <div class="form-group">
-      <label>API Key</label>
-      <input type="password" id="aiKey" placeholder="sk-...">
-    </div>
-    <div class="form-group">
-      <label>模型名称</label>
-      <input type="text" id="aiModel" list="aiModelList" placeholder="deepseek-chat">
-      <datalist id="aiModelList"></datalist>
-    </div>
-  </div>
-  <button class="btn primary" onclick="saveSettings()">{{ icon("check") }}保存设置</button>
-  <button class="btn" onclick="testAi()">测试连接</button>
-  <span class="msg hint" id="aiTestMsg" style="margin-left:10px;"></span>
-  <p class="hint mt8">没有 Key 也能用规则提取与全部手动功能；填了 Key 后每个文件可点「AI 整理」，小点也会上线。
-     已保存的 Key 只显示为掩码，直接保存不会改动它。
-     ⚠️ 启用后，使用 AI 功能时相关文本会发送到<b>你填写的接口商</b>。</p>
-</div>
-
-<div class="card">
-  <div class="between">
-    <h2 style="margin:0;">{{ icon("star") }}示例数据</h2>
-    <span class="tag gray">虚构人物「李明」</span>
-  </div>
-  <p class="hint">想先看看简历模板的效果？载入一份虚构示例资料即可预览四套模板；
-     「清除」会清空当前账户的全部简历数据（保留账户名），请谨慎操作。</p>
-  <button class="btn" onclick="demoLoad()">载入示例数据</button>
-  <button class="btn danger" onclick="demoClear()">清除当前账户数据</button>
-</div>
-
-<div class="card">
-  <div class="between">
-    <h2 style="margin:0;">{{ icon("settings") }}数据备份与恢复</h2>
-    <span class="tag gray">每次启动自动备份 · 保留最近 20 份</span>
-  </div>
-  <p class="hint">误删或改错数据时，可从下方任一快照一键恢复；恢复前系统会先把当前状态再自动备份一次，放心操作。</p>
-  <div id="backupList" class="hint">加载中…</div>
 </div>
 
 {% endblock %}
@@ -375,64 +316,6 @@ async function deleteFile(id) {
   location.reload();
 }
 
-async function saveSettings() {
-  await api("/api/settings", { method: "PUT", body: {
-    api_key: val("#aiKey"), api_base: val("#aiBase"), model: val("#aiModel") } });
-  setVal("#aiKey", "");
-  toast("设置已保存");
-}
-
-const AI_PRESETS = {
-  deepseek: { base: "https://api.deepseek.com/v1", models: ["deepseek-chat", "deepseek-reasoner"] },
-  openai:   { base: "https://api.openai.com/v1",   models: ["gpt-4o-mini", "gpt-4o"] },
-  moonshot: { base: "https://api.moonshot.cn/v1",  models: ["moonshot-v1-8k", "moonshot-v1-32k"] },
-  zhipu:    { base: "https://open.bigmodel.cn/api/paas/v4", models: ["glm-4-flash", "glm-4-plus"] },
-  ollama:   { base: "http://127.0.0.1:11434/v1",   models: [] },
-};
-function applyPreset() {
-  const p = AI_PRESETS[val("#aiPreset")];
-  if (!p) return;
-  setVal("#aiBase", p.base);
-  const dl = document.getElementById("aiModelList");
-  dl.innerHTML = p.models.map(m => `<option value="${m}">`).join("");
-  if (p.models.length) setVal("#aiModel", p.models[0]);
-}
-async function testAi() {
-  const m = document.getElementById("aiTestMsg");
-  m.textContent = "测试中…";
-  try {
-    const r = await api("/api/ai/test", { api_base: val("#aiBase"), api_key: val("#aiKey"), model: val("#aiModel") });
-    m.textContent = r.ok ? "✓ 连接成功" : "✗ " + r.error;
-  } catch (e) { m.textContent = "✗ " + e.message; }
-}
-
-async function demoLoad() {
-  if (!confirm("载入虚构人物「李明」的示例资料？仅在当前账户为空时可用。")) return;
-  try { await api("/api/demo/load", { method: "POST" }); toast("示例数据已载入"); setTimeout(() => location.reload(), 500); }
-  catch (e) { toast(e.message, 5000); }
-}
-async function demoClear() {
-  if (!confirm("将清空当前账户的全部简历数据（条目、资料、教育/论文/项目），保留账户名。\n此操作不可恢复，确定继续？")) return;
-  try { await api("/api/demo/clear", { method: "POST" }); toast("已清空"); setTimeout(() => location.reload(), 500); }
-  catch (e) { toast(e.message, 5000); }
-}
-
-(async function loadSettings() {
-  try {
-    const s = await api("/api/settings");
-    // API Key 只回显掩码；输入框留空即可保持原值不变
-    setVal("#aiKey", s.api_key ? "" : "");
-    document.getElementById("aiKey").placeholder = s.api_key || "sk-...";
-    setVal("#aiBase", s.api_base);
-    setVal("#aiModel", s.model);
-    // 按已保存的接口地址反显服务商预设
-    const cur = (s.api_base || "").replace(/\/$/, "");
-    for (const [k, p] of Object.entries(AI_PRESETS)) {
-      if (cur && p.base.replace(/\/$/, "") === cur) { setVal("#aiPreset", k); break; }
-    }
-  } catch (e) { /* 忽略 */ }
-})();
-
 // ---- 手机扫码直传 ----
 async function loadQr() {
   const box = document.getElementById("qrImg");
@@ -488,8 +371,6 @@ async function toggleLan(control) {
     await loadQr();
   }
 }
-async function rotateToken() {
-
 async function saveManualIp() {
   const ip = document.getElementById("manualIp").value.trim();
   try {
@@ -502,35 +383,12 @@ async function clearManualIp() {
   document.getElementById("manualIp").value = "";
   await saveManualIp();
 }
+async function rotateToken() {
   await api("/api/mobile/rotate-token", { method: "POST" });
   toast("二维码已重置，旧链接失效");
   loadQr();
 }
 loadQr();
 
-// ---- 数据备份与恢复 ----
-async function loadBackups() {
-  const box = document.getElementById("backupList");
-  if (!box) return;
-  try {
-    const list = await api("/api/backups");
-    if (!list.length) { box.textContent = "还没有备份（首次启动后会自动生成）。"; return; }
-    box.innerHTML = `<table class="data"><thead><tr><th>备份时间</th><th>大小</th><th>操作</th></tr></thead><tbody>` +
-      list.map(b => `<tr>
-        <td>${esc(b.created_at || b.filename)}</td>
-        <td class="muted">${(b.size / 1024).toFixed(0)} KB</td>
-        <td><button class="btn small" onclick="restoreBackup('${esc(b.filename)}')">恢复此快照</button></td>
-      </tr>`).join("") + `</tbody></table>`;
-  } catch (e) { box.textContent = "备份列表加载失败：" + e.message; }
-}
-async function restoreBackup(name) {
-  if (!confirm(`确定把全部数据恢复到快照 ${name} 吗？\n\n恢复前当前状态会先自动备份一份；\n但上次备份之后新增/修改的内容会被覆盖，请确认。`)) return;
-  try {
-    await api("/api/backups/restore", { method: "POST", body: { filename: name } });
-    toast("已恢复，页面即将刷新");
-    setTimeout(() => location.reload(), 800);
-  } catch (e) { toast(e.message, 5000); }
-}
-loadBackups();
 </script>
 {% endblock %}

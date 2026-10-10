@@ -20,6 +20,7 @@
   .priv { background:#f0faf7; border:1px solid #cfeae2; border-radius:10px; padding:10px 12px; font-size:13px; color:#14665a; line-height:1.7; margin:14px 0; }
   label { display:block; font-size:13px; font-weight:600; color:#456; margin:12px 0 5px; }
   input[type=text], input[type=password], select { width:100%; padding:10px 11px; border:1px solid #d6dee4; border-radius:10px; font-size:14px; }
+  input[readonly] { background:#f4f6f8; color:#6b7280; cursor:not-allowed; }
   .row { display:flex; gap:10px; align-items:center; }
   .row select { width:150px; }
   button { cursor:pointer; border:none; border-radius:10px; padding:10px 18px; font-size:14px; font-weight:600; }
@@ -76,21 +77,21 @@
     <p class="hint">配置你自己的大模型 API 后解锁：「AI 整理」把扫描件文字变成规范条目、AI 助手「小点」帮你润色简历。<b>不配置也能正常使用</b>——手动录入与规则提取不受影响。</p>
     <label>服务商预设</label>
     <select id="preset">
-      <option value="">— 自定义 —</option>
-      <option value="deepseek">DeepSeek（国内，便宜）</option>
+      <option value="">OpenAI 兼容（自定义地址）</option>
+      <option value="deepseek">DeepSeek</option>
       <option value="openai">OpenAI</option>
       <option value="moonshot">Moonshot Kimi</option>
       <option value="zhipu">智谱 GLM</option>
       <option value="ollama">Ollama（本地模型，零成本）</option>
     </select>
     <label>接口地址</label>
-    <input type="text" id="base" value="{{ api_base }}" placeholder="https://api.deepseek.com/v1">
+    <input type="text" id="base" value="{{ api_base }}" placeholder="https://api.deepseek.com">
     <label>API Key</label>
     <input type="password" id="key" placeholder="{% if has_key %}已保存 · 留空表示不修改{% else %}sk-...{% endif %}">
     <label>模型名称</label>
     <input type="text" id="model" list="modelList" value="{{ ai_model }}" placeholder="deepseek-chat">
     <datalist id="modelList"></datalist>
-    <div class="hint" style="margin-top:5px;">下拉可选该服务商的常用模型，也可直接手动输入任意型号。</div>
+    <div class="hint" style="margin-top:5px;" id="modelTip">下拉可选该服务商的模型，也可直接手动输入任意型号。</div>
     <div class="row" style="margin-top:12px;">
       <button class="ghost" id="testBtn" onclick="testAi()">测试连接</button>
       <span class="msg" id="tmsg"></span>
@@ -112,22 +113,48 @@
 <script>
 let step = 1;
 const total = 3;
+// 接口地址按各家官方文档填写；选定厂商后地址锁定，防止误改（Ollama 端口可能不同，保持可改）
 const PRESETS = {
-  deepseek: { base: "https://api.deepseek.com/v1", models: ["deepseek-chat", "deepseek-reasoner"] },
+  deepseek: { base: "https://api.deepseek.com", alias: ["https://api.deepseek.com/v1"],
+              models: ["deepseek-chat", "deepseek-reasoner"] },
   openai:   { base: "https://api.openai.com/v1",   models: ["gpt-4o-mini", "gpt-4o"] },
   moonshot: { base: "https://api.moonshot.cn/v1",  models: ["moonshot-v1-8k", "moonshot-v1-32k"] },
   zhipu:    { base: "https://open.bigmodel.cn/api/paas/v4", models: ["glm-4-flash", "glm-4-plus"] },
-  ollama:   { base: "http://127.0.0.1:11434/v1",   models: [] },  // 取决于本地已拉取的模型，自由填写
+  ollama:   { base: "http://127.0.0.1:11434/v1",   models: [], editable: true },  // 取决于本地已拉取的模型
 };
+function lockBase(key) {
+  const p = PRESETS[key];
+  const el = document.getElementById("base");
+  el.readOnly = !!p && !p.editable;
+  el.title = el.readOnly ? "已选定服务商，地址固定；需要自定义请选「OpenAI 兼容（自定义地址）」" : "";
+}
+// 从服务商拉取模型列表填入下拉；拿不到就保留内置候选，仍可手动填写
+async function loadModels() {
+  const base = document.getElementById("base").value.trim();
+  const tip = document.getElementById("modelTip");
+  if (!base) return;
+  try {
+    const r = await api("/api/ai/models", { api_base: base, api_key: document.getElementById("key").value });
+    if (r.ok && r.models.length) {
+      document.getElementById("modelList").innerHTML = r.models.map(m => `<option value="${m.replace(/"/g, "&quot;")}">`).join("");
+      tip.textContent = `已从服务商获取 ${r.models.length} 个模型，点输入框选择`;
+      return;
+    }
+  } catch (e) { /* 回退到手动填写 */ }
+  tip.textContent = "未能获取模型列表，可从常用模型中选择或手动填写";
+}
+document.getElementById("key").addEventListener("change", loadModels);
 function applyPreset(key) {
   const p = PRESETS[key];
   const base = document.getElementById("base");
   const model = document.getElementById("model");
   const dl = document.getElementById("modelList");
+  lockBase(key);
   if (!p) { dl.innerHTML = ""; return; }
   base.value = p.base;
   dl.innerHTML = p.models.map(m => `<option value="${m}">`).join("");
   if (p.models.length) model.value = p.models[0];
+  loadModels();
 }
 document.getElementById("preset").addEventListener("change", function () {
   applyPreset(this.value);
@@ -136,7 +163,13 @@ document.getElementById("preset").addEventListener("change", function () {
 (function matchPreset() {
   const cur = (document.getElementById("base").value || "").replace(/\/$/, "");
   for (const [k, p] of Object.entries(PRESETS)) {
-    if (cur && p.base.replace(/\/$/, "") === cur) { document.getElementById("preset").value = k; break; }
+    if (cur && [p.base, ...(p.alias || [])].includes(cur)) {
+      document.getElementById("preset").value = k;
+      document.getElementById("base").value = p.base;  // 旧版保存的 …/v1 统一成官方写法
+      document.getElementById("modelList").innerHTML = p.models.map(m => `<option value="${m}">`).join("");
+      lockBase(k);
+      break;
+    }
   }
 })();
 

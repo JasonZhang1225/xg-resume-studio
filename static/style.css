@@ -154,6 +154,7 @@ input:focus, select:focus, textarea:focus {
   box-shadow: 0 0 0 3px rgba(13, 148, 136, .16);
 }
 textarea { resize: vertical; min-height: 70px; }
+input[readonly] { background: #f4f6f8; color: var(--muted, #6b7280); cursor: not-allowed; }
 label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 5px; font-weight: 500; }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
 .form-group { margin-bottom: 12px; }
@@ -736,3 +737,23 @@ input[type=text], input[type=email], input[type=password], select, textarea { mi
 /* ===== 小点流式输出 ===== */
 .bubble.streaming::after { content: "▍"; margin-left: 2px; color: var(--primary, #0f766e); animation: rs-blink 1s steps(1) infinite; }
 @keyframes rs-blink { 50% { opacity: 0; } }
+
+/* ===== 顶栏右侧：简历预览入口 + 设置齿轮，与一级导航分开 ===== */
+.nav-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.nav-right .userwrap { margin-left: 0; }
+.nav-preview { white-space: nowrap; }
+.nav-gear {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border-radius: 10px; color: var(--muted);
+  transition: color .15s var(--ease), background .15s var(--ease);
+}
+.nav-gear .ic { width: 19px; height: 19px; }
+.nav-gear:hover, .nav-gear.active { color: var(--primary-deep); background: var(--primary-soft); text-decoration: none; }
+@media (max-width: 1150px) { .nav-preview span { display: none; } }
+/* 窄屏：品牌、右侧操作占第一行，一级导航单独一行横向排开，避免整页横向滚动 */
+@media (max-width: 720px) {
+  .topnav { flex-wrap: wrap; height: auto; padding: 8px 12px; row-gap: 6px; }
+  .topnav .brand > span:last-child { display: none; }
+  .topnav .links { order: 3; width: 100%; flex-shrink: 1; justify-content: space-between; overflow-x: auto; }
+  .uc-name { max-width: 90px; overflow: hidden; text-overflow: ellipsis; }
+}

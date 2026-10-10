@@ -44,7 +44,7 @@
 </head>
 <body>
 <div class="toolbar no-print">
-  <a class="btn small" href="/">首页</a>
+  <a class="btn small" href="/" id="backBtn" title="返回上一页">← 返回</a>
   <select id="versionSel" title="简历版本"></select>
   <button class="btn small" id="btnVersions">版本管理</button>
   <select id="userSel" title="当前账户">
@@ -72,6 +72,19 @@
 <script src="/static/app.js?v={{ asset_version }}"></script>
 <script>
 const QS = new URLSearchParams(location.search);
+// 预览页是独立层级：「返回」回到进入前的那个功能页；直接打开时回首页
+(() => {
+  try {
+    const ref = document.referrer ? new URL(document.referrer) : null;
+    if (ref && ref.origin === location.origin && ref.pathname !== "/resume") {
+      document.getElementById("backBtn").href = ref.pathname + ref.search;
+      sessionStorage.setItem("resumeBack", ref.pathname + ref.search);
+    } else {
+      const saved = sessionStorage.getItem("resumeBack");
+      if (saved) document.getElementById("backBtn").href = saved;
+    }
+  } catch (e) { /* 回首页 */ }
+})();
 const CUR_TPL = {{ current_template | tojson }};
 const DENSITY = {{ density | tojson }};
 const CUR_LANG = {{ lang | tojson }};

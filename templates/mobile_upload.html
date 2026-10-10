@@ -119,6 +119,14 @@ async function uploadOne(file) {
   }
 }
 
+const LEVELS = ["国家级", "省级", "市级", "校级", "院级", "其他"];
+// 级别下拉：识别出的非常规值也保留为可选项，不丢数据
+function levelSelect(attr, cur) {
+  const opts = [...LEVELS];
+  if (cur && !opts.includes(cur)) opts.unshift(cur);
+  return `<select ${attr}><option value="">未填写</option>${opts.map(v =>
+    `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>`;
+}
 function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
 
 const CATS = ["奖学金", "荣誉称号", "竞赛获奖", "资格证书", "聘书任职", "结业培训", "其他"];
@@ -140,7 +148,7 @@ function renderCertCard(r, i) {
       <div class="row"><label>名称</label><input data-cf="${i}:title" value="${esc(r.title)}"></div>
       <div class="row"><label>分类</label><select data-cf="${i}:category">${catOpts}</select></div>
       <div class="row"><label>时间</label><input data-cf="${i}:date" value="${esc(r.date)}" placeholder="2024年6月"></div>
-      <div class="row"><label>级别</label><input data-cf="${i}:level" value="${esc(r.level)}" placeholder="国家级/省级/校级"></div>
+      <div class="row"><label>级别</label>${levelSelect(`data-cf="${i}:level"`, r.level)}</div>
       <div class="row"><label>单位</label><input data-cf="${i}:issuer" value="${esc(r.issuer)}" placeholder="颁发单位（可选）"></div>
       <button class="ok" onclick="saveCert(${i})">保存修改</button>
       <button class="ok gray" onclick="deleteCert(${i})">删除这条归档</button>
@@ -156,7 +164,7 @@ function renderAwardCard(r, i) {
           <label class="ck"><input type="checkbox" checked data-k="${i}:a:${j}"> 导入这条获奖</label>
           <div class="row"><label>名称</label><input data-f="${i}:a:${j}:title" value="${esc(a.title)}"></div>
           <div class="row"><label>时间</label><input data-f="${i}:a:${j}:date" value="${esc(a.date)}" placeholder="2024年6月"></div>
-          <div class="row"><label>级别</label><input data-f="${i}:a:${j}:level" value="${esc(a.level)}" placeholder="国家级/省级/校级"></div>
+          <div class="row"><label>级别</label>${levelSelect(`data-f="${i}:a:${j}:level"`, a.level)}</div>
         </div>`).join("")}
       ${(r.positions || []).map((p, j) => `
         <div class="pw">
@@ -180,12 +188,24 @@ async function saveCert(i) {
     issuer: val(`data-cf="${i}:issuer"`),
   };
   if (!body.title) { alert("证书名称不能为空"); return; }
+  const saving = document.querySelector(`.cand[data-i="${i}"] button.ok`);
+  if (saving) { saving.textContent = "保存中…"; saving.disabled = true; }
   try {
     await api(`/api/certs/${queue[i].res.id}`, { method: "PUT", body });
     Object.assign(queue[i].res, body);
     renderQueue();
     document.getElementById("st").textContent = `✅ 已更新《${body.title}》`;
-  } catch (err) { alert("保存失败：" + err.message); }
+    // 提示放在按钮上：页面往下翻时顶部状态栏看不到，容易以为没反应
+    const btn = document.querySelector(`.cand[data-i="${i}"] button.ok`);
+    if (btn) {
+      btn.textContent = "✅ 已保存";
+      btn.disabled = true;
+      setTimeout(() => { btn.textContent = "保存修改"; btn.disabled = false; }, 1800);
+    }
+  } catch (err) {
+    if (saving) { saving.textContent = "保存修改"; saving.disabled = false; }
+    alert("保存失败：" + err.message);
+  }
 }
 
 async function deleteCert(i) {

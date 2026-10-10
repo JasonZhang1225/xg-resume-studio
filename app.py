@@ -31,9 +31,9 @@ FROZEN = getattr(sys, "frozen", False)
 BASE_DIR = Path(getattr(sys, "_MEIPASS", "")) if FROZEN else Path(__file__).resolve().parent
 APP_ROOT = Path(sys.executable).resolve().parent if FROZEN else BASE_DIR
 # 静态资源版本：每次发布更新后递增，避免浏览器复用旧的 CSS/JS 缓存。
-ASSET_VERSION = "20260826-lan-switch-2"
+ASSET_VERSION = "20261011-settings-page"
 # 用户运行时数据统一放在 data/ 下（数据库/备份/上传件），打包分享时整体排除
-RUNTIME_DIR = APP_ROOT / "data"
+RUNTIME_DIR = Path(db.DATA_DIR)
 UPLOAD_DIR = RUNTIME_DIR / "uploads"
 PHOTO_DIR = UPLOAD_DIR / "photos"
 ATTACH_DIR = UPLOAD_DIR / "attachments"
@@ -124,7 +124,7 @@ async def _entry_gate(request, call_next):
 
     if _needs_setup():
         p = request.url.path
-        allowed = ("/setup", "/static/", "/api/setup", "/api/ai/test", "/api/assistant/avatar")
+        allowed = ("/setup", "/static/", "/api/setup", "/api/ai/test", "/api/ai/models", "/api/assistant/avatar")
         if not any(p == a or p.startswith(a) for a in allowed):
             if p.startswith("/api/") or request.method != "GET":
                 return JSONResponse({"detail": "请先完成初始化向导", "need_setup": True}, status_code=403)
@@ -517,6 +517,14 @@ def index(request: Request):
         cert_count=len(db.get_rows_where("certificates", "user_id=?", (uid,))),
         has_ai=bool(db.get_setting("api_key")),
         lan_mode=_lan_enabled(),
+    ))
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page(request: Request):
+    return templates.TemplateResponse(request, "settings.html", _base_ctx(request,
+        active="settings",
+        data_dir=db.DATA_DIR,
     ))
 
 
@@ -1725,6 +1733,9 @@ def ai_test(payload: dict):
     其他失败（超时/拒绝/鉴权）立即返回人话错误，不让页面干等。"""
     base = (payload.get("api_base") or "").strip().rstrip("/")
     key = (payload.get("api_key") or "").strip()
+    # 输入框留空（或是掩码）时用已保存的 Key 测试，避免已保存却测不通
+    if not key or "***" in key:
+        key = db.get_setting("api_key") or ""
     model = (payload.get("model") or "").strip()
     if not base or not model:
         return {"ok": False, "error": "接口地址与模型名称不能为空"}
@@ -1758,6 +1769,28 @@ def ai_test(payload: dict):
     except Exception as e:
         return {"ok": False, "error": _friendly_conn_err(e)}
 
+
+
+@app.post("/api/ai/models")
+def ai_models(payload: dict):
+    """从服务商的 /models 拉取可用模型，供前端下拉选择；拿不到时前端回退为手动填写。"""
+    base = (payload.get("api_base") or "").strip().rstrip("/")
+    key = (payload.get("api_key") or "").strip()
+    if not key or "***" in key:
+        key = db.get_setting("api_key") or ""
+    if not base:
+        return {"ok": False, "models": [], "error": "接口地址不能为空"}
+    import urllib.request
+    req = urllib.request.Request(base + "/models", headers={"Authorization": f"Bearer {key}"})
+    try:
+        with urllib.request.urlopen(req, timeout=8) as r:
+            data = json.loads(r.read().decode("utf-8", "replace"))
+    except Exception as e:
+        return {"ok": False, "models": [], "error": _friendly_conn_err(e)}
+    items = (data.get("data") or data.get("models") or []) if isinstance(data, dict) else []
+    models = sorted({str(m.get("id") or m.get("name") or "").strip() if isinstance(m, dict) else str(m)
+                     for m in items} - {""})
+    return {"ok": True, "models": models}
 
 _DEMO_PROFILE = {
     "name": "李明", "gender": "男", "birth_date": "2003年5月",
@@ -1808,7 +1841,7 @@ def setup_finish(response: Response, payload: dict):
         key = (payload.get("api_key") or "").strip()
         if key:
             db.set_setting("api_key", key)
-            db.set_setting("api_base", (payload.get("api_base") or "https://api.deepseek.com/v1").strip())
+            db.set_setting("api_base", (payload.get("api_base") or "https://api.deepseek.com").strip())
             db.set_setting("model", (payload.get("model") or "deepseek-chat").strip())
     db.set_setting("initialized", "1")
     if users:
@@ -1954,7 +1987,7 @@ def _mask_secret(key: str) -> str:
 def get_settings():
     return {
         "api_key": _mask_secret(db.get_setting("api_key")),
-        "api_base": db.get_setting("api_base", "https://api.deepseek.com/v1"),
+        "api_base": db.get_setting("api_base", "https://api.deepseek.com"),
         "model": db.get_setting("model", "deepseek-chat"),
         "assistant_avatar": db.get_setting("assistant_avatar"),
     }
@@ -1984,7 +2017,7 @@ def _llm_chat(messages, temperature=0.5):
     api_key = db.get_setting("api_key")
     if not api_key:
         raise HTTPException(400, "还没有配置 AI 的 API Key，请先在首页填写")
-    url = db.get_setting("api_base", "https://api.deepseek.com/v1").rstrip("/") + "/chat/completions"
+    url = db.get_setting("api_base", "https://api.deepseek.com").rstrip("/") + "/chat/completions"
     body = {
         "model": db.get_setting("model", "deepseek-chat"),
         "temperature": temperature,
@@ -2018,7 +2051,7 @@ def ai_extract(request: Request, payload: dict):
     try:
         result = extractor.ai_extract(
             row["raw_text"],
-            db.get_setting("api_base", "https://api.deepseek.com/v1"),
+            db.get_setting("api_base", "https://api.deepseek.com"),
             db.get_setting("api_key"),
             db.get_setting("model", "deepseek-chat"),
         )
@@ -2091,7 +2124,7 @@ def _llm_chat_stream(messages, temperature=0.5):
     api_key = db.get_setting("api_key")
     if not api_key:
         raise HTTPException(400, "还没有配置 AI 的 API Key，请先在首页填写")
-    url = db.get_setting("api_base", "https://api.deepseek.com/v1").rstrip("/") + "/chat/completions"
+    url = db.get_setting("api_base", "https://api.deepseek.com").rstrip("/") + "/chat/completions"
     body = {
         "model": db.get_setting("model", "deepseek-chat"),
         "temperature": temperature,

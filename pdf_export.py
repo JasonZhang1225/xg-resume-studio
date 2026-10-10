@@ -8,6 +8,7 @@ import html
 from io import BytesIO
 from pathlib import Path
 
+from database import DATA_DIR
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4
@@ -44,7 +45,7 @@ _BODY = ParagraphStyle("body", parent=getSampleStyleSheet()["BodyText"], **_BASE
 _ITEM = ParagraphStyle("item", parent=_BODY, fontSize=10.5, leading=15, spaceAfter=2)
 
 # 证件照目录（与 app.py 的 PHOTO_DIR 对齐）
-_PHOTO_DIR = Path(__file__).resolve().parent / "data" / "uploads" / "photos"
+_PHOTO_DIR = Path(DATA_DIR) / "uploads" / "photos"
 
 
 def _esc(text: str) -> str:

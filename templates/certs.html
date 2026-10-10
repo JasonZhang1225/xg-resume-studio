@@ -41,7 +41,7 @@
     <div class="flex">
       <select id="yearSel" onchange="applyFilter()">
         <option value="">全部年份</option>
-        {% for g in groups %}<option value="{{ g.year }}">{{ g.year }}（{{ g.items|length }}）</option>{% endfor %}
+        {% for g in groups %}<option value="{{ g.year }}">{{ g.year }}（{{ g["items"]|length }}）</option>{% endfor %}
       </select>
       <input id="searchBox" placeholder="搜索标题 / 单位 / 备注…" oninput="applyFilter()" style="min-width:200px;">
     </div>
@@ -51,11 +51,11 @@
 {% for g in groups %}
 <section class="year-group" data-year="{{ g.year }}">
   <div class="year-head">
-    <span>{{ g.year }}</span><small>{{ g.items|length }} 份</small>
+    <span>{{ g.year }}</span><small>{{ g["items"]|length }} 份</small>
   </div>
   {% set group_id = loop.index0 %}
   <div class="cert-grid">
-    {% for c in g.items %}
+    {% for c in g["items"] %}
     <div class="cert-card" data-id="{{ c.id }}" data-cat="{{ c.category or '其他' }}"
          data-text="{{ (c.title ~ ' ' ~ (c.issuer or '') ~ ' ' ~ (c.notes or '') ~ ' ' ~ (c.date or '')) | lower }}"
          onclick="openCert({{ c.id }})">
@@ -91,6 +91,7 @@
 
 {% block scripts %}
 <script>
+const CERT_LEVELS = ["国家级", "省级", "市级", "校级", "院级", "其他"];
 const dropzone = document.getElementById("dropzone");
 const fileInput = document.getElementById("fileInput");
 const camInput = document.getElementById("camInput");
@@ -201,7 +202,8 @@ function openCert(id) {
              <input id="cdCat" list="catList" value="${esc(c.category)}" placeholder="竞赛获奖 / 奖学金 / 资格证书…">
            </div>
            <div class="form-group"><label>获得时间</label><input id="cdDate" data-dpick value="${esc(c.date)}"></div>
-           <div class="form-group"><label>级别</label><input id="cdLevel" value="${esc(c.level)}" placeholder="国家级/省级/校级"></div>
+           <div class="form-group"><label>级别</label><select id="cdLevel"><option value="">未填写</option>${[...(c.level && !CERT_LEVELS.includes(c.level) ? [c.level] : []), ...CERT_LEVELS].map(v =>
+             `<option value="${esc(v)}" ${v === c.level ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></div>
            <div class="form-group"><label>颁发单位</label><input id="cdIssuer" value="${esc(c.issuer)}"></div>
          </div>
          <div class="form-group"><label>备注</label><textarea id="cdNotes" rows="2">${esc(c.notes)}</textarea></div>
