@@ -11,18 +11,20 @@ import sqlite3
 import subprocess
 import sys
 import uuid
+import zipfile
 import hmac
 from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, File, Request, UploadFile, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, select_autoescape
 
 import database as db
 import cert_organizer
+import datasync
 import extractor
 import parsers
 
@@ -31,7 +33,7 @@ FROZEN = getattr(sys, "frozen", False)
 BASE_DIR = Path(getattr(sys, "_MEIPASS", "")) if FROZEN else Path(__file__).resolve().parent
 APP_ROOT = Path(sys.executable).resolve().parent if FROZEN else BASE_DIR
 # 静态资源版本：每次发布更新后递增，避免浏览器复用旧的 CSS/JS 缓存。
-ASSET_VERSION = "20261011-settings-page"
+ASSET_VERSION = "20261011-data-sync"
 # 用户运行时数据统一放在 data/ 下（数据库/备份/上传件），打包分享时整体排除
 RUNTIME_DIR = Path(db.DATA_DIR)
 UPLOAD_DIR = RUNTIME_DIR / "uploads"
@@ -61,6 +63,8 @@ try:
     db.backup_db()
 except Exception:
     pass
+# 设置了网盘同步文件夹时，后台定期把整包数据写过去
+datasync.start_background()
 # 后台预热 OCR 模型，让首次上传识别更快（未装 OCR 时静默跳过）
 parsers.warmup_ocr()
 
@@ -124,7 +128,8 @@ async def _entry_gate(request, call_next):
 
     if _needs_setup():
         p = request.url.path
-        allowed = ("/setup", "/static/", "/api/setup", "/api/ai/test", "/api/ai/models", "/api/assistant/avatar")
+        allowed = ("/setup", "/static/", "/api/setup", "/api/ai/test", "/api/ai/models", "/api/assistant/avatar",
+                   "/settings", "/api/data/", "/api/backups")
         if not any(p == a or p.startswith(a) for a in allowed):
             if p.startswith("/api/") or request.method != "GET":
                 return JSONResponse({"detail": "请先完成初始化向导", "need_setup": True}, status_code=403)
@@ -525,6 +530,8 @@ def settings_page(request: Request):
     return templates.TemplateResponse(request, "settings.html", _base_ctx(request,
         active="settings",
         data_dir=db.DATA_DIR,
+        legacy_dir=db.LEGACY_DATA_DIR if db.legacy_data_pending() else "",
+        portable=db.PORTABLE,
     ))
 
 
@@ -1935,6 +1942,97 @@ def restore_backup(payload: dict):
         d.close()
         s.close()
     return {"ok": True}
+
+
+# ---------- 整包导出 / 导入 / 网盘同步 ----------
+# 都会读写整份个人数据或本机任意文件夹，只允许电脑本机操作，已配对的手机也不行
+
+def _require_local(request: Request):
+    if not _is_loopback(request.client.host if request.client else ""):
+        raise HTTPException(403, "只能在电脑本机操作")
+
+
+@app.get("/api/data/info")
+def data_info(request: Request):
+    _require_local(request)
+    cfg = datasync.load_config()
+    return {
+        "data_dir": db.DATA_DIR,
+        "portable": db.PORTABLE,
+        "legacy_dir": db.LEGACY_DATA_DIR if db.legacy_data_pending() else "",
+        "sync": {k: cfg.get(k, "") for k in ("enabled", "dir", "last_sync", "last_file", "last_error", "last_try")},
+        "candidates": datasync.cloud_candidates(),
+        "sync_subdir": datasync.SYNC_SUBDIR,
+    }
+
+
+@app.get("/api/data/export")
+def data_export(request: Request):
+    _require_local(request)
+    tmp = Path(db.BACKUP_DIR) / ".export.zip"
+    tmp.parent.mkdir(parents=True, exist_ok=True)
+    datasync.write_export(str(tmp))
+    name = f"滴鱼简历备份-{datetime.now():%Y%m%d-%H%M}.zip"
+    return FileResponse(str(tmp), media_type="application/zip", filename=name)
+
+
+@app.post("/api/data/import")
+async def data_import(request: Request, file: UploadFile = File(...)):
+    _require_local(request)
+    tmp = Path(db.BACKUP_DIR) / ".import.zip"
+    tmp.parent.mkdir(parents=True, exist_ok=True)
+    with open(tmp, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    try:
+        manifest = datasync.import_zip(str(tmp))
+    except (ValueError, zipfile.BadZipFile) as e:
+        raise HTTPException(400, str(e) or "不是有效的 zip 文件")
+    finally:
+        tmp.unlink(missing_ok=True)
+    return {"ok": True, "created_at": manifest.get("created_at", ""), "host": manifest.get("host", "")}
+
+
+@app.post("/api/data/import-legacy")
+def data_import_legacy(request: Request):
+    _require_local(request)
+    try:
+        datasync.import_legacy_dir()
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+
+@app.put("/api/data/sync")
+def data_sync_config(request: Request, payload: dict):
+    _require_local(request)
+    cfg = datasync.load_config()
+    path = str(payload.get("dir") or "").strip()
+    enabled = bool(payload.get("enabled"))
+    if enabled or path:
+        try:
+            path = str(datasync.validate_dir(path))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+    if path != cfg.get("dir"):
+        cfg.pop("fingerprint", None)
+    cfg.update(dir=path, enabled=enabled and bool(path))
+    datasync.save_config(cfg)
+    result = {"ok": True}
+    if cfg["enabled"]:
+        try:
+            result.update(datasync.sync_now(force=True))
+        except Exception as e:
+            result.update(ok=False, error=str(e))
+    return result
+
+
+@app.post("/api/data/sync/now")
+def data_sync_now(request: Request):
+    _require_local(request)
+    try:
+        return datasync.sync_now(force=True)
+    except Exception as e:
+        raise HTTPException(400, f"同步失败：{e}")
 
 
 # ---------- 模板管理 ----------

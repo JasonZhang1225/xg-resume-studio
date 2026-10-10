@@ -54,14 +54,55 @@
   <button class="btn danger" onclick="demoClear()">清除当前账户数据</button>
 </div>
 
+<div class="card" id="data">
+  <div class="between">
+    <h2 style="margin:0;">{{ icon("file") }}数据存放与整包备份</h2>
+    <span class="tag gray">{{ "便携模式" if portable else "数据与程序分开存放" }}</span>
+  </div>
+  <p class="hint">数据目录：<code style="word-break:break-all;">{{ data_dir }}</code><br>
+     数据库、证件照、证书原件和自动备份都在这里；重装、升级、换安装位置都不会动它。</p>
+  {% if legacy_dir %}
+  <div class="alert-banner" style="display:block;margin:10px 0 0;">
+    程序旁的旧数据目录里还有数据，没有导入当前数据目录：<br>
+    <code style="word-break:break-all;">{{ legacy_dir }}</code>
+    <div class="mt8"><button class="btn small" onclick="importLegacy()">导入旧数据</button>
+      <span class="hint">会覆盖当前数据，覆盖前自动备份</span></div>
+  </div>
+  {% endif %}
+  <div class="mt8" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+    <a class="btn primary" href="/api/data/export" download>{{ icon("download") }}导出全部数据（zip）</a>
+    <button class="btn" onclick="document.getElementById('importFile').click()">从 zip 恢复…</button>
+    <input type="file" id="importFile" accept=".zip" hidden onchange="importZip(this)">
+  </div>
+  <p class="hint mt8">zip 里包含数据库和全部上传文件，可用于换电脑。导出的包不含 API Key 等本机密钥。
+     从 zip 恢复会覆盖当前全部简历数据（覆盖前会自动备份一份）。</p>
+</div>
+
+<div class="card" id="sync">
+  <div class="between">
+    <h2 style="margin:0;">{{ icon("upload") }}同步备份到网盘</h2>
+    <label class="lan-switch" title="开启后，数据有变化时每 5 分钟自动写一份备份到网盘文件夹">
+      <span class="lan-switch-state" id="syncState">—</span>
+      <input type="checkbox" class="lan-native-switch" id="syncToggle" role="switch" aria-label="自动同步">
+    </label>
+  </div>
+  <p class="hint">选一个 OneDrive、iCloud 等网盘在本机的<b>同步文件夹</b>，程序会把整包备份写进其中的
+     「<span id="syncSub"></span>」子文件夹，由网盘客户端上传。数据库本身仍留在本机，不会直接放进网盘。</p>
+  <div id="syncCandidates" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
+  <div class="mt8" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+    <input type="text" id="syncDir" placeholder="网盘同步文件夹的完整路径" style="flex:1;min-width:240px;">
+    <button class="btn" onclick="saveSync()">保存</button>
+    <button class="btn" id="syncNowBtn" onclick="syncNow()">立即同步</button>
+  </div>
+  <div class="hint mt8" id="syncStatus"></div>
+</div>
+
 <div class="card">
   <div class="between">
     <h2 style="margin:0;">{{ icon("settings") }}数据备份与恢复</h2>
     <span class="tag gray">每次启动自动备份 · 保留最近 20 份</span>
   </div>
   <p class="hint">误删或改错数据时，可从下方任一快照一键恢复；恢复前系统会先把当前状态再自动备份一次，放心操作。</p>
-  <p class="hint">数据目录：<code style="word-break:break-all;">{{ data_dir }}</code>
-     （数据库 <code>data.db</code>、上传文件 <code>uploads/</code>、自动备份 <code>data_backups/</code> 都在这里；换电脑或重装前，整个文件夹复制走即可）</p>
   <div id="backupList" class="hint">加载中…</div>
 </div>
 
@@ -187,5 +228,68 @@ async function restoreBackup(name) {
   } catch (e) { toast(e.message, 5000); }
 }
 loadBackups();
+
+// ---- 整包导出导入 / 网盘同步 ----
+async function importZip(input) {
+  const f = input.files[0]; input.value = "";
+  if (!f) return;
+  if (!confirm(`用「${f.name}」覆盖当前全部简历数据？\n\n覆盖前会自动备份当前数据，可在下方快照里找回。`)) return;
+  toast("正在恢复…", 8000);
+  try {
+    const r = await apiUpload("/api/data/import", f);
+    toast(`已恢复${r.created_at ? `（备份于 ${r.created_at}）` : ""}，页面即将刷新`);
+    setTimeout(() => location.href = "/", 1000);
+  } catch (e) { toast(e.message, 6000); }
+}
+async function importLegacy() {
+  if (!confirm("用旧数据目录里的数据覆盖当前数据？覆盖前会自动备份当前数据。")) return;
+  try { await api("/api/data/import-legacy", { method: "POST" }); toast("已导入，页面即将刷新"); setTimeout(() => location.reload(), 800); }
+  catch (e) { toast(e.message, 6000); }
+}
+function renderSync(s) {
+  const t = document.getElementById("syncToggle");
+  t.checked = !!s.enabled;
+  t.setAttribute("aria-checked", String(!!s.enabled));
+  document.getElementById("syncState").textContent = s.enabled ? "开" : "关";
+  const st = document.getElementById("syncStatus");
+  if (s.last_error) st.innerHTML = `<span style="color:var(--danger)">上次同步失败（${esc(s.last_try || "")}）：${esc(s.last_error)}</span>`;
+  else if (s.last_sync) st.innerHTML = `上次同步：${esc(s.last_sync)} → <code style="word-break:break-all;">${esc(s.last_file)}</code>`;
+  else st.textContent = s.dir ? "尚未同步" : "未设置同步文件夹";
+}
+async function loadSync() {
+  try {
+    const info = await api("/api/data/info");
+    document.getElementById("syncSub").textContent = info.sync_subdir;
+    setVal("#syncDir", info.sync.dir || "");
+    const box = document.getElementById("syncCandidates");
+    box.innerHTML = info.candidates.length
+      ? info.candidates.map(c => `<button class="btn small" data-path="${esc(c.path)}" title="${esc(c.path)}">使用 ${esc(c.label)}</button>`).join("")
+      : '<span class="hint">没有检测到 OneDrive / iCloud 同步文件夹，可手动填写路径。</span>';
+    box.querySelectorAll("[data-path]").forEach(b => b.onclick = () => setVal("#syncDir", b.dataset.path));
+    renderSync(info.sync);
+  } catch (e) {
+    document.getElementById("syncStatus").textContent = "同步设置只能在电脑本机查看：" + e.message;
+  }
+}
+async function saveSync(enabled) {
+  if (enabled === undefined) enabled = document.getElementById("syncToggle").checked || !!val("#syncDir");
+  try {
+    const r = await api("/api/data/sync", { method: "PUT", body: { dir: val("#syncDir"), enabled } });
+    toast(r.ok === false ? "已保存，但同步失败：" + r.error : (enabled ? "已保存并完成一次同步" : "已保存"), 4000);
+  } catch (e) { toast(e.message, 6000); }
+  loadSync();
+}
+document.getElementById("syncToggle").addEventListener("change", (e) => {
+  if (e.target.checked && !val("#syncDir")) { e.target.checked = false; return toast("请先填写或选择同步文件夹"); }
+  saveSync(e.target.checked);
+});
+async function syncNow() {
+  const b = document.getElementById("syncNowBtn");
+  b.disabled = true; b.textContent = "同步中…";
+  try { await api("/api/data/sync/now", { method: "POST" }); toast("同步完成"); }
+  catch (e) { toast(e.message, 6000); }
+  finally { b.disabled = false; b.textContent = "立即同步"; loadSync(); }
+}
+loadSync();
 </script>
 {% endblock %}
